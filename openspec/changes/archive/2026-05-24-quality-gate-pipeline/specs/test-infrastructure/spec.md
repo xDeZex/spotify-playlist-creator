@@ -1,8 +1,5 @@
-# test-infrastructure Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change project-scaffolding. Update Purpose after archive.
-## Requirements
 ### Requirement: pytest runs with python -m pytest
 The project SHALL be configured so that `python -m pytest` discovers and runs all tests without additional arguments.
 
@@ -24,6 +21,8 @@ The project SHALL declare pytest configuration in `pyproject.toml` under `[tool.
 - **WHEN** `python -m pytest` is run
 - **THEN** pytest searches `tests/` as the test root, not the entire project
 
+## ADDED Requirements
+
 ### Requirement: dev dependencies include quality gate tools
 The project SHALL declare `pre-commit`, `ruff`, and `mypy` as dev dependencies in `pyproject.toml` under `[project.optional-dependencies] dev`.
 
@@ -44,4 +43,3 @@ The project SHALL declare mypy configuration in `pyproject.toml` under `[tool.my
 #### Scenario: mypy runs in strict mode
 - **WHEN** `mypy .` is run
 - **THEN** mypy applies strict checking, requiring full type annotations
-
