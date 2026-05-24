@@ -1,2 +1,6 @@
+from spotify_playlist_creator.auth import SpotifyToken, authenticate
+
+
 def run() -> None:
-    print("Spotify Playlist Creator")
+    token: SpotifyToken = authenticate()
+    print(f"Spotify Playlist Creator - authenticated ({token.token_type})")
