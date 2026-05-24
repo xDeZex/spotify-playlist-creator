@@ -1,0 +1,25 @@
+# Environment
+.env
+*.env
+
+# Spotify token/cache files
+.cache
+.cache-*
+*.token
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+ENV/

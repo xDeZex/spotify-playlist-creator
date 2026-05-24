@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "spotify-playlist-creator"
+version = "0.1.0"
+description = "Reads Spotify liked albums and creates an organized local folder structure"
+requires-python = ">=3.10"
+dependencies = [
+    "spotipy>=2.23.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["spotify_playlist_creator*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
