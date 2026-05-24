@@ -20,6 +20,8 @@ For each reviewer finding, fix it — via amend if introduced by this commit, in
 
 Each PR must have exactly one commit and must target `main`. All fixes and follow-ups go into the same commit via `git commit --amend`.
 
+Before pushing, if there is an active OpenSpec change: run `openspec archive <name>` (which syncs specs automatically) and include the resulting changes — archived change directory and updated `openspec/specs/` — in the commit via amend.
+
 ## Commands
 
 ```bash
