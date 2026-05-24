@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-A script that reads a user's Spotify liked albums and creates an organized local folder structure — one folder per artist, containing all of that artist's albums.
+A script that reads a user's Saved Albums and organizes them inside Spotify — creating one Artist Folder per artist, each containing one Album Playlist per Release. See `CONTEXT.md` for the full domain vocabulary.
 
 ## General rules
 
@@ -25,11 +25,23 @@ When asked to "automerge": fetch origin, check `git log origin/main..HEAD` and o
 ## Commands
 
 ```bash
-python main.py                  # run the script
-python -m pytest                # run all tests
+python main.py                              # run the script
+python -m pytest                            # run all tests
 python -m pytest tests/test_foo.py::test_bar  # single test
+ruff check .                                # lint
+ruff format .                               # format
+mypy spotify_playlist_creator tests         # type-check (strict)
+pre-commit run --all-files                  # run all hooks against every file
 ```
+
+One-time setup: `pre-commit install` (activates hooks so `git commit` triggers them automatically).
 
 ## Architecture
 
-_To be filled in once the project structure is established._
+Single entry-point script backed by one package:
+
+- `main.py` — entry point; imports and calls `run()`
+- `spotify_playlist_creator/__init__.py` — exposes `run()`, the top-level orchestration function
+- `tests/` — pytest test suite (`python -m pytest`)
+
+All tool configuration (ruff, mypy, pytest) lives in `pyproject.toml`. Pre-commit hooks run ruff and mypy on every commit; GitHub Actions CI runs the same hooks plus pytest on every push and PR.
