@@ -6,6 +6,7 @@
 .cache
 .cache-*
 *.token
+.spotify_token.json
 
 # Python
 __pycache__/
