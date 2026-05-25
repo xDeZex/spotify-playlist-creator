@@ -38,11 +38,9 @@ OpenSpec specs define requirements as `### Requirement:` blocks with `#### Scena
 ### Style and structure
 - Flag clearly and suggest the fix directly. These are almost always small — fix now.
 
-### Architecture (Kotlin/Compose/MVVM)
-- ViewModels must not perform I/O directly — only call repository methods
-- Repositories must expose `Flow<T>`, not raw values
-- UI state must derive from a single `StateFlow<UiState>` via `combine()` + `stateIn()` — no separate state fields that can go out of sync
-- Compose functions must not hold business logic
+### Architecture
+- Clean separation of concerns — is each module responsible for exactly one thing?
+- Public interfaces use domain types, not raw primitives
 - Small violations: fix now. Structural refactors: file an issue.
 
 ## Output format
