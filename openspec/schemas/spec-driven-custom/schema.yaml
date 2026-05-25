@@ -267,5 +267,8 @@ apply:
     methods or implementation details. A test that breaks on internal rename is
     testing the wrong thing.
 
+    Test fixtures must be deterministic — use fixed constants, not values that
+    vary between runs.
+
     Pause if: the RED test won't fail (resolve with user), GREEN breaks unrelated
     tests, or implementation reveals a design issue (suggest updating artifacts).
