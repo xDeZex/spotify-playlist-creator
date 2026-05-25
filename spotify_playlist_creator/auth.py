@@ -5,8 +5,10 @@ import dataclasses
 import http.server
 import json
 import os
+import pathlib
 import secrets
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -22,12 +24,51 @@ _SCOPES = (
     "user-library-read playlist-read-private "
     "playlist-modify-public playlist-modify-private"
 )
+_TOKEN_PATH = pathlib.Path(".spotify_token.json")
 
 
 @dataclasses.dataclass(frozen=True)
 class SpotifyToken:
+    """Immutable token grant returned by the Spotify token endpoint."""
+
     access_token: str
     token_type: str
+    refresh_token: str
+    expires_at: float
+
+
+def _save_token(token: SpotifyToken) -> None:
+    _TOKEN_PATH.write_text(
+        json.dumps(
+            {
+                "access_token": token.access_token,
+                "token_type": token.token_type,
+                "refresh_token": token.refresh_token,
+                "expires_at": token.expires_at,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _load_token() -> SpotifyToken | None:
+    try:
+        data: dict[str, Any] = json.loads(_TOKEN_PATH.read_text(encoding="utf-8"))
+        return SpotifyToken(
+            access_token=str(data["access_token"]),
+            token_type=str(data["token_type"]),
+            refresh_token=str(data["refresh_token"]),
+            expires_at=float(data["expires_at"]),
+        )
+    except (
+        FileNotFoundError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        KeyError,
+        ValueError,
+        TypeError,
+    ):
+        return None
 
 
 def authenticate(*, _timeout: float = 120.0) -> SpotifyToken:
@@ -39,10 +80,68 @@ def authenticate(*, _timeout: float = 120.0) -> SpotifyToken:
     if client_secret is None:
         raise ValueError("Missing environment variable: SPOTIFY_CLIENT_SECRET")
 
+    cached = _load_token()
+    if cached is not None:
+        if time.time() < cached.expires_at - 60:
+            return cached
+        try:
+            token = _refresh_access_token(
+                client_id, client_secret, cached.refresh_token
+            )
+            _save_token(token)
+            return token
+        except RuntimeError:
+            pass
+
     state = secrets.token_urlsafe(16)
     auth_url = _build_auth_url(client_id, state)
     code = _run_local_auth_flow(auth_url, state, timeout=_timeout)
-    return _exchange_code(client_id, client_secret, code)
+    token = _exchange_code(client_id, client_secret, code)
+    _save_token(token)
+    return token
+
+
+def _refresh_access_token(
+    client_id: str, client_secret: str, refresh_token: str
+) -> SpotifyToken:
+    credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    data = urllib.parse.urlencode(
+        {"grant_type": "refresh_token", "refresh_token": refresh_token}
+    ).encode()
+    req = urllib.request.Request(
+        _TOKEN_URL,
+        data=data,
+        headers={
+            "Authorization": f"Basic {credentials}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req) as response:
+            body: dict[str, Any] = json.loads(response.read())
+            new_refresh = (
+                str(body["refresh_token"])
+                if body.get("refresh_token")
+                else refresh_token
+            )
+            try:
+                return SpotifyToken(
+                    access_token=str(body["access_token"]),
+                    token_type=str(body["token_type"]),
+                    refresh_token=new_refresh,
+                    expires_at=time.time() + float(body["expires_in"]),
+                )
+            except (KeyError, ValueError, TypeError) as exc:
+                raise RuntimeError(
+                    f"Token refresh response missing expected fields: {exc}"
+                ) from exc
+    except urllib.error.HTTPError as exc:
+        body_text = exc.read().decode()
+        raise RuntimeError(
+            f"Token refresh failed: HTTP {exc.code} {body_text}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Token refresh failed: {exc.reason}") from exc
 
 
 def _build_auth_url(client_id: str, state: str) -> str:
@@ -157,10 +256,17 @@ def _exchange_code(client_id: str, client_secret: str, code: str) -> SpotifyToke
     try:
         with urllib.request.urlopen(req) as response:
             body: dict[str, Any] = json.loads(response.read())
-            return SpotifyToken(
-                access_token=str(body["access_token"]),
-                token_type=str(body["token_type"]),
-            )
+            try:
+                return SpotifyToken(
+                    access_token=str(body["access_token"]),
+                    token_type=str(body["token_type"]),
+                    refresh_token=str(body["refresh_token"]),
+                    expires_at=time.time() + float(body["expires_in"]),
+                )
+            except (KeyError, ValueError, TypeError) as exc:
+                raise RuntimeError(
+                    f"Token exchange response missing expected fields: {exc}"
+                ) from exc
     except urllib.error.HTTPError as exc:
         body_text = exc.read().decode()
         raise RuntimeError(

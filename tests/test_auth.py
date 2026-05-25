@@ -13,12 +13,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import spotify_playlist_creator.auth as _auth
 from spotify_playlist_creator import run
 from spotify_playlist_creator.auth import (
     _CALLBACK_HOST,
     _CALLBACK_PORT,
     _REDIRECT_URI,
+    _TOKEN_URL,
     SpotifyToken,
+    _load_token,
+    _save_token,
     authenticate,
 )
 
@@ -68,11 +72,19 @@ def _send_bad_state_callback() -> None:
 
 
 def _fake_token_response(
-    access_token: str = "test_access_token", token_type: str = "Bearer"
+    access_token: str = "test_access_token",
+    token_type: str = "Bearer",
+    refresh_token: str = "test_refresh_token",
+    expires_in: int = 3600,
 ) -> Any:
     class _Response:
         def read(self) -> bytes:
-            payload = {"access_token": access_token, "token_type": token_type}
+            payload = {
+                "access_token": access_token,
+                "token_type": token_type,
+                "refresh_token": refresh_token,
+                "expires_in": expires_in,
+            }
             return json.dumps(payload).encode()
 
         def __enter__(self) -> _Response:
@@ -107,10 +119,17 @@ def _browser_mock(*, error: str | None = None, bad_state: bool = False) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def test_spotify_token_has_access_token_and_token_type() -> None:
-    token = SpotifyToken(access_token="abc123", token_type="Bearer")
+def test_spotify_token_fields() -> None:
+    token = SpotifyToken(
+        access_token="abc123",
+        token_type="Bearer",
+        refresh_token="rtoken123",
+        expires_at=9999999999.0,
+    )
     assert token.access_token == "abc123"
     assert token.token_type == "Bearer"
+    assert token.refresh_token == "rtoken123"
+    assert token.expires_at == 9999999999.0
 
 
 def test_authenticate_raises_for_missing_client_id(
@@ -301,7 +320,7 @@ def test_authenticate_raises_when_callback_has_no_code_or_error(
                 )
                 conn.request("GET", f"/callback?state={urllib.parse.quote(state)}")
                 conn.getresponse()
-            except Exception:
+            except (OSError, http.client.HTTPException):
                 pass
 
         threading.Thread(target=send, daemon=True).start()
@@ -332,7 +351,7 @@ def test_callback_server_shuts_down_after_authenticate(
         with patch("urllib.request.urlopen", return_value=_fake_token_response()):
             authenticate()
 
-    time.sleep(0.05)  # let OS close the socket
+    time.sleep(0.2)  # let OS close the socket
     try:
         conn = http.client.HTTPConnection(_CALLBACK_HOST, _CALLBACK_PORT, timeout=1)
         conn.request("GET", "/")
@@ -360,6 +379,27 @@ def test_authenticate_returns_spotify_token(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert token.access_token == "real_token"
     assert token.token_type == "Bearer"
+    assert token.refresh_token == "test_refresh_token"
+    assert token.expires_at > 0
+
+
+def test_exchange_code_captures_refresh_token_and_expires_at(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+
+    with patch("webbrowser.open", side_effect=_browser_mock()):
+        with patch(
+            "urllib.request.urlopen",
+            return_value=_fake_token_response(
+                refresh_token="real_rtoken", expires_in=3600
+            ),
+        ):
+            token = authenticate()
+
+    assert token.refresh_token == "real_rtoken"
+    assert pytest.approx(token.expires_at, abs=5) == time.time() + 3600
 
 
 def test_authenticate_raises_on_token_exchange_failure(
@@ -399,7 +439,383 @@ def test_authenticate_raises_on_token_exchange_url_error(
 
 
 # ---------------------------------------------------------------------------
-# Group 5: Integration with run()
+# Group 5: Token persistence helpers
+# ---------------------------------------------------------------------------
+
+_SAMPLE_TOKEN = SpotifyToken(
+    access_token="atok",
+    token_type="Bearer",
+    refresh_token="rtok",
+    expires_at=12345.0,
+)
+
+
+def test_save_token_writes_all_fields() -> None:
+    _save_token(_SAMPLE_TOKEN)
+    data = json.loads(_auth._TOKEN_PATH.read_text())
+    assert data["access_token"] == "atok"
+    assert data["token_type"] == "Bearer"
+    assert data["refresh_token"] == "rtok"
+    assert data["expires_at"] == 12345.0
+
+
+def test_load_token_returns_token_from_valid_file() -> None:
+    _save_token(_SAMPLE_TOKEN)
+    assert _load_token() == _SAMPLE_TOKEN
+
+
+def test_load_token_returns_none_when_file_absent() -> None:
+    _auth._TOKEN_PATH.unlink(missing_ok=True)
+    assert _load_token() is None
+
+
+def test_load_token_returns_none_for_corrupt_json() -> None:
+    _auth._TOKEN_PATH.write_text("not valid json{{{", encoding="utf-8")
+    assert _load_token() is None
+
+
+def test_load_token_returns_none_when_field_missing() -> None:
+    _auth._TOKEN_PATH.write_text(
+        json.dumps({"access_token": "atok", "token_type": "Bearer"}),
+        encoding="utf-8",
+    )
+    assert _load_token() is None
+
+
+def test_load_token_returns_none_for_non_utf8_content() -> None:
+    _auth._TOKEN_PATH.write_bytes(b"\xff\xfe invalid bytes")
+    assert _load_token() is None
+
+
+# ---------------------------------------------------------------------------
+# Group 6: authenticate() caching, refresh, and save
+# ---------------------------------------------------------------------------
+
+
+def test_authenticate_returns_cached_token_when_valid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+    _save_token(
+        SpotifyToken(
+            access_token="cached_tok",
+            token_type="Bearer",
+            refresh_token="cached_rtoken",
+            expires_at=time.time() + 3600,
+        )
+    )
+
+    with patch("webbrowser.open") as mock_browser:
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            token = authenticate()
+
+    mock_browser.assert_not_called()
+    mock_urlopen.assert_not_called()
+    assert token.access_token == "cached_tok"
+
+
+def test_authenticate_falls_through_when_cache_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+
+    with patch("webbrowser.open", side_effect=_browser_mock()):
+        with patch(
+            "urllib.request.urlopen",
+            return_value=_fake_token_response(),
+        ):
+            token = authenticate()
+
+    assert token.access_token == "test_access_token"
+
+
+def test_authenticate_refreshes_expired_token_silently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+    _save_token(
+        SpotifyToken(
+            access_token="old_tok",
+            token_type="Bearer",
+            refresh_token="refresh_me",
+            expires_at=time.time() - 10,
+        )
+    )
+
+    with patch("webbrowser.open") as mock_browser:
+        with patch(
+            "urllib.request.urlopen",
+            return_value=_fake_token_response(
+                access_token="new_tok", refresh_token="new_rtoken"
+            ),
+        ):
+            token = authenticate()
+
+    mock_browser.assert_not_called()
+    assert token.access_token == "new_tok"
+
+
+def test_authenticate_refreshes_token_expiring_within_60s_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+    _save_token(
+        SpotifyToken(
+            access_token="old_tok",
+            token_type="Bearer",
+            refresh_token="refresh_me",
+            expires_at=time.time() + 30,
+        )
+    )
+
+    with patch("webbrowser.open") as mock_browser:
+        with patch(
+            "urllib.request.urlopen",
+            return_value=_fake_token_response(access_token="refreshed_tok"),
+        ):
+            token = authenticate()
+
+    mock_browser.assert_not_called()
+    assert token.access_token == "refreshed_tok"
+
+
+def test_authenticate_falls_through_to_browser_when_refresh_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+    _save_token(
+        SpotifyToken(
+            access_token="old_tok",
+            token_type="Bearer",
+            refresh_token="bad_refresh",
+            expires_at=time.time() - 10,
+        )
+    )
+
+    def grant_type_aware_urlopen(req: Any, *args: Any, **kwargs: Any) -> Any:
+        params = dict(urllib.parse.parse_qsl(req.data.decode()))
+        if params.get("grant_type") == "refresh_token":
+            raise urllib.error.HTTPError(
+                url=_TOKEN_URL,
+                code=400,
+                msg="Bad Request",
+                hdrs=MagicMock(),
+                fp=io.BytesIO(b"invalid_grant"),
+            )
+        return _fake_token_response(access_token="browser_tok")
+
+    browser_called = [False]
+
+    def recording_browser(url: str) -> None:
+        browser_called[0] = True
+        _browser_mock()(url)
+
+    with patch("webbrowser.open", side_effect=recording_browser):
+        with patch("urllib.request.urlopen", side_effect=grant_type_aware_urlopen):
+            token = authenticate()
+
+    assert browser_called[0]
+    assert token.access_token == "browser_tok"
+
+
+def test_authenticate_saves_token_after_browser_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+
+    with patch("webbrowser.open", side_effect=_browser_mock()):
+        with patch(
+            "urllib.request.urlopen",
+            return_value=_fake_token_response(access_token="saved_tok"),
+        ):
+            authenticate()
+
+    assert _auth._TOKEN_PATH.exists()
+    data = json.loads(_auth._TOKEN_PATH.read_text())
+    assert data["access_token"] == "saved_tok"
+
+
+def test_authenticate_saves_new_token_after_refresh_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+    _save_token(
+        SpotifyToken(
+            access_token="old_tok",
+            token_type="Bearer",
+            refresh_token="bad_refresh",
+            expires_at=time.time() - 10,
+        )
+    )
+
+    def grant_type_aware_urlopen(req: Any, *args: Any, **kwargs: Any) -> Any:
+        params = dict(urllib.parse.parse_qsl(req.data.decode()))
+        if params.get("grant_type") == "refresh_token":
+            raise urllib.error.HTTPError(
+                url=_TOKEN_URL,
+                code=400,
+                msg="Bad Request",
+                hdrs=MagicMock(),
+                fp=io.BytesIO(b"invalid_grant"),
+            )
+        return _fake_token_response(access_token="browser_tok")
+
+    with patch("webbrowser.open", side_effect=_browser_mock()):
+        with patch("urllib.request.urlopen", side_effect=grant_type_aware_urlopen):
+            authenticate()
+
+    data = json.loads(_auth._TOKEN_PATH.read_text())
+    assert data["access_token"] == "browser_tok"
+
+
+def test_authenticate_saves_token_after_silent_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+    _save_token(
+        SpotifyToken(
+            access_token="old_tok",
+            token_type="Bearer",
+            refresh_token="refresh_me",
+            expires_at=time.time() - 10,
+        )
+    )
+
+    with patch("webbrowser.open"):
+        with patch(
+            "urllib.request.urlopen",
+            return_value=_fake_token_response(
+                access_token="refreshed_tok", refresh_token="new_rtoken"
+            ),
+        ):
+            authenticate()
+
+    data = json.loads(_auth._TOKEN_PATH.read_text())
+    assert data["access_token"] == "refreshed_tok"
+    assert data["refresh_token"] == "new_rtoken"
+
+
+def test_refresh_access_token_preserves_old_refresh_token_when_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+    _save_token(
+        SpotifyToken(
+            access_token="old_tok",
+            token_type="Bearer",
+            refresh_token="original_rtoken",
+            expires_at=time.time() - 10,
+        )
+    )
+
+    class _ResponseWithoutRefreshToken:
+        def read(self) -> bytes:
+            return json.dumps(
+                {"access_token": "new_tok", "token_type": "Bearer", "expires_in": 3600}
+            ).encode()
+
+        def __enter__(self) -> _ResponseWithoutRefreshToken:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            pass
+
+    with patch("webbrowser.open"):
+        with patch(
+            "urllib.request.urlopen",
+            return_value=_ResponseWithoutRefreshToken(),
+        ):
+            token = authenticate()
+
+    assert token.refresh_token == "original_rtoken"
+
+
+def test_refresh_access_token_preserves_old_refresh_token_when_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+    _save_token(
+        SpotifyToken(
+            access_token="old_tok",
+            token_type="Bearer",
+            refresh_token="original_rtoken",
+            expires_at=time.time() - 10,
+        )
+    )
+
+    class _ResponseWithEmptyRefreshToken:
+        def read(self) -> bytes:
+            return json.dumps(
+                {
+                    "access_token": "new_tok",
+                    "token_type": "Bearer",
+                    "refresh_token": "",
+                    "expires_in": 3600,
+                }
+            ).encode()
+
+        def __enter__(self) -> _ResponseWithEmptyRefreshToken:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            pass
+
+    with patch("webbrowser.open"):
+        with patch(
+            "urllib.request.urlopen",
+            return_value=_ResponseWithEmptyRefreshToken(),
+        ):
+            token = authenticate()
+
+    assert token.refresh_token == "original_rtoken"
+
+
+def test_authenticate_falls_through_to_browser_when_refresh_raises_url_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+    _save_token(
+        SpotifyToken(
+            access_token="old_tok",
+            token_type="Bearer",
+            refresh_token="refresh_me",
+            expires_at=time.time() - 10,
+        )
+    )
+
+    def url_error_on_refresh_urlopen(req: Any, *args: Any, **kwargs: Any) -> Any:
+        params = dict(urllib.parse.parse_qsl(req.data.decode()))
+        if params.get("grant_type") == "refresh_token":
+            raise urllib.error.URLError("connection refused")
+        return _fake_token_response(access_token="browser_tok")
+
+    browser_called = [False]
+
+    def recording_browser(url: str) -> None:
+        browser_called[0] = True
+        _browser_mock()(url)
+
+    with patch("webbrowser.open", side_effect=recording_browser):
+        with patch("urllib.request.urlopen", side_effect=url_error_on_refresh_urlopen):
+            token = authenticate()
+
+    assert browser_called[0]
+    assert token.access_token == "browser_tok"
+
+
+# ---------------------------------------------------------------------------
+# Group 7: Integration with run()
 # ---------------------------------------------------------------------------
 
 
@@ -408,7 +824,12 @@ def test_run_calls_authenticate(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def mock_authenticate(**kwargs: Any) -> SpotifyToken:
         call_count[0] += 1
-        return SpotifyToken(access_token="tok", token_type="Bearer")
+        return SpotifyToken(
+            access_token="tok",
+            token_type="Bearer",
+            refresh_token="rtoken",
+            expires_at=9999999999.0,
+        )
 
     monkeypatch.setattr("spotify_playlist_creator.authenticate", mock_authenticate)
     run()
@@ -422,7 +843,10 @@ def test_run_token_available_for_downstream(
     monkeypatch.setattr(
         "spotify_playlist_creator.authenticate",
         lambda **kwargs: SpotifyToken(
-            access_token="downstream_tok", token_type="Bearer"
+            access_token="downstream_tok",
+            token_type="Bearer",
+            refresh_token="rtoken",
+            expires_at=9999999999.0,
         ),
     )
     run()
