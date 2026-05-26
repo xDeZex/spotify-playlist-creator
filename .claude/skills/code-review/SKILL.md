@@ -8,16 +8,15 @@ Spawn a code review subagent with the right context and instructions.
 ## Determine scope
 
 - **Per-behavior cycle** (during openspec apply): the files changed in this RED/GREEN/REFACTOR cycle only — not the full diff
-- **Post-commit**: run `git show HEAD` to get the diff
-- **Ad-hoc**: whatever the user points at
+- **Final review** (end of all OpenSpec tasks, user-triggered, or any ad-hoc request): the full branch diff against main
 
 ## Steps
 
 1. **Gather the code to review**
-   - Commit review: run `git show HEAD` to get the diff
-   - Cycle review: run `git diff HEAD` scoped to the changed files
-   
-   In both cases the diff tells the reviewer which lines changed. Pass it verbatim — the reviewer reads the full files itself for context.
+   - Per-cycle: identify changed files from `git show --name-only HEAD`, then run `git show HEAD -- <files>` scoped to those files
+   - Final review: run `git diff origin/main` to get the full branch diff, unless the user pointed at something more specific (a file path, commit ref, or range)
+
+   In all cases the diff tells the reviewer which lines changed. Pass it verbatim — the reviewer reads the full files itself for context.
 
    **If OpenSpec context will be gathered (step 2):** strip `openspec/changes/**` file sections from the diff before passing it. Those files are already provided as structured context; including them in the diff is redundant.
 
@@ -39,8 +38,8 @@ Spawn a code review subagent with the right context and instructions.
    something not listed there, note it — undeclared impact is itself a finding.
 
 3. **Read the appropriate reviewer reference** — both files live inside the skill's own directory (`<skill-base-dir>/references/`):
-   - Per-cycle review: read `references/reviewer-light.md`
-   - Post-commit review: read `references/reviewer.md`
+   - Per-cycle: read `references/reviewer-light.md`
+   - Final review: read `references/reviewer.md`
 
 4. **Spawn a subagent** — model and file-reading depth differ by scope:
 
@@ -52,7 +51,7 @@ Spawn a code review subagent with the right context and instructions.
    - If OpenSpec context was gathered: global specs, delta specs, current task description (same as below)
    - A note that this is a per-cycle review
 
-   **Post-commit (Sonnet):**
+   **Final review (Sonnet):**
    - model: sonnet
    - Opening instructions: full content of `references/reviewer.md`
    - The diff (verbatim), labelled "Changed lines"
@@ -61,12 +60,8 @@ Spawn a code review subagent with the right context and instructions.
      - The global specs for each capability, labelled "Requirements (global spec)"
      - The delta specs, labelled "Requirements (this change)"
      - The current task description, labelled "Behavior in scope"
-   - A note that this is a post-commit review
+   - A note that this is a final review of the full change
 
 5. **Print the full report to the user NOW, before doing anything else.** Output the subagent's report verbatim as a text message. Do not skip ahead to fixing — the user must see the findings first.
 
-6. **Act on findings** — only after printing the report. The subagent reports only; the main Claude acts.
-
-   For each finding:
-   - **Fix now** — apply the fix inline immediately (amend if post-commit, in-place if mid-cycle). No confirmation needed.
-   - **Needs filing** — present to the user and explain why it can't be fixed inline. Only file after the user confirms.
+6. **Act on findings** — only after printing the report. The subagent reports only; the main Claude acts on findings per the project workflow in CLAUDE.md.

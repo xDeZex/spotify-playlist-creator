@@ -10,15 +10,15 @@ A script that reads a user's Saved Albums and organizes them inside Spotify — 
 
 Never `git push` unless explicitly told to.
 
-Before starting any work, run `git fetch origin && git rebase origin/main` to ensure the branch is up to date.
+When starting brand-new work — a new OpenSpec change or any fresh implementation — create a new branch with a fitting name (`git checkout -b <name>`), then run `git fetch origin && git rebase origin/main` to ensure it is up to date with main. For continuing work on an existing branch, just rebase.
 
-Before committing, do a quick self-review of `git diff HEAD`. Catch surface-level issues yourself so the reviewer only sees substantive ones.
+### Commit and review workflow
 
-**Every commit must be followed by a `code-review` skill run before anything else happens.** Invoke it with `git show HEAD` immediately after `git commit`. Do not respond to the user, start the next task, or take any other action until the review is complete and all findings are resolved. The only exception: a commit whose entire diff is pure style or naming (import order, test rename, comment wording) — skip the review only in that case. When in doubt, run it.
+Each OpenSpec step produces one commit. After each step commit, run the `code-review` skill, fix any findings in a single `fix: review finding — <short description>` commit, then move on. Fix commits at this stage do not trigger another review.
 
-For each reviewer finding, fix it — via a new temp commit (e.g. `fix: review finding — <short description>`) so the review trail is visible. Only file a GitHub issue when the fix is too large or too risky to do now. Default to fixing, not filing.
+Any other `code-review` run — end of OpenSpec, user-triggered, or ad-hoc — uses the full branch diff (`git diff origin/main`) and loops: review → fix (`fix: review finding`) → review again, until no inline-fixable findings remain. Filed-only findings do not keep the loop running.
 
-Each PR must have exactly one commit and must target `main`. Before creating a PR, squash all temp/fix commits into one: `git reset --soft origin/main`, then recommit with the final message. If the branch contains multiple unrelated commits, first fetch and check whether any earlier PRs have already merged into `main` (`git fetch origin && git log origin/main..HEAD`) — the branch may look clean once main is up to date. Only if genuinely unrelated commits remain should you create a separate PR for each by cherry-picking onto a fresh branch from `main`.
+Each PR must have exactly one commit and must target `main`. Before creating a PR, confirm with the user that they want to squash, then squash all commits into one: `git reset --soft origin/main`, recommit with the final message. If the branch contains multiple unrelated commits, first fetch and check whether any earlier PRs have already merged into `main` (`git fetch origin && git log origin/main..HEAD`) — the branch may look clean once main is up to date. Only if genuinely unrelated commits remain should you create a separate PR for each by cherry-picking onto a fresh branch from `main`.
 
 When asked to "automerge": fetch origin, check `git log origin/main..HEAD` and open PRs (`gh pr list`) to understand the current state. If the commit implements an OpenSpec change, archive it first (`/opsx:archive`) and amend the commit to include the archived change. Then create a PR for the latest commit and enable automerge (`gh pr merge --auto --rebase`).
 
