@@ -9,8 +9,12 @@ An album the user has saved to their Spotify library. Used only to determine whi
 _Avoid_: Liked album, followed album, favorited album
 
 **Artist Folder**:
-A Spotify playlist folder named after an artist, containing Album Playlists for every Release by that artist on Spotify — not just the saved ones. Multiple distinct Spotify artists sharing the same name are merged into one folder.
+A Spotify playlist folder named after a Spotify artist, containing Album Playlists for every Release by that artist. Two artists with the same name but different Spotify IDs produce two separate folders.
 _Avoid_: Artist directory, artist group
+
+**Artist**:
+A Spotify artist identified by their Spotify ID. Two artists with the same name are distinct if their IDs differ.
+_Avoid_: Band, musician
 
 **Primary Artist**:
 The first artist listed in Spotify's artist array for an album. Determines which Artist Folder an album belongs to.

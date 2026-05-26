@@ -1,20 +1,14 @@
 from __future__ import annotations
 
-import dataclasses
 import json
 import urllib.request
+from datetime import datetime
 from typing import Any
 
 from spotify_playlist_creator.auth import SpotifyToken
+from spotify_playlist_creator.models import Artist, SavedAlbum
 
 _SAVED_ALBUMS_URL = "https://api.spotify.com/v1/me/albums"
-
-
-@dataclasses.dataclass
-class SavedAlbum:
-    id: str
-    name: str
-    artist_names: list[str]
 
 
 def fetch_saved_albums(token: SpotifyToken) -> list[SavedAlbum]:
@@ -38,10 +32,29 @@ def fetch_saved_albums(token: SpotifyToken) -> list[SavedAlbum]:
                 SavedAlbum(
                     id=str(album["id"]),
                     name=str(album["name"]),
-                    artist_names=[str(a["name"]) for a in album.get("artists", [])],
+                    artists=[
+                        Artist(id=str(a["id"]), name=str(a["name"]))
+                        for a in album.get("artists", [])
+                    ],
+                    added_at=datetime.fromisoformat(
+                        str(item["added_at"]).replace("Z", "+00:00")
+                    ).replace(tzinfo=None),
                 )
             )
 
         url = body.get("next")
 
     return results
+
+
+def derive_artists(albums: list[SavedAlbum]) -> list[Artist]:
+    seen: set[str] = set()
+    result: list[Artist] = []
+    for album in sorted(albums, key=lambda a: a.added_at):
+        if not album.artists:
+            continue
+        primary = album.artists[0]
+        if primary.id not in seen:
+            seen.add(primary.id)
+            result.append(primary)
+    return result
