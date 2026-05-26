@@ -71,6 +71,7 @@ Implement tasks from an OpenSpec change.
    - Make the code changes required
    - Keep changes minimal and focused
    - Mark task complete in the tasks file: `- [ ]` → `- [x]`
+   - Commit all changes (including the updated task checkbox) and run the `code-review` skill; fix any findings in a single `fix: review finding — <short description>` commit, then continue
    - Continue to next task
 
    **Pause if:**
@@ -84,7 +85,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
+   - If all done: ask "Ready for final review?"
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -115,7 +116,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! Ready to archive this change.
+All tasks complete! Ready for final review?
 ```
 
 **Output On Pause (Issue Encountered)**
