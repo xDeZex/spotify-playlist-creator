@@ -33,7 +33,6 @@ def fetch_artist_releases(token: SpotifyToken, artist_id: str) -> list[RawReleas
                     id=str(item["id"]),
                     name=str(item["name"]),
                     album_type=str(item["album_type"]),
-                    total_tracks=int(item["total_tracks"]),
                     release_date=str(item["release_date"]),
                 )
             )

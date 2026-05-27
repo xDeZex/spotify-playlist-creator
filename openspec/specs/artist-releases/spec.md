@@ -22,7 +22,9 @@ The system SHALL fetch all albums and singles for a given artist by calling `GET
 - **THEN** a `ValueError` is raised and no HTTP request is made
 
 ### Requirement: RawRelease model
-The system SHALL represent each item returned by the artist albums endpoint as a `RawRelease` dataclass with the following fields: `id` (Spotify album ID), `name` (display name), `album_type` (Spotify's classification: `"album"`, `"single"`, or `"compilation"`), `total_tracks` (integer track count), `release_date` (partial ISO string as returned by Spotify: `"YYYY"`, `"YYYY-MM"`, or `"YYYY-MM-DD"`).
+The system SHALL represent each item returned by the artist albums endpoint as a `RawRelease` dataclass with the following fields: `id` (Spotify album ID), `name` (display name), `album_type` (Spotify's classification: `"album"`, `"single"`, or `"compilation"`), `release_date` (partial ISO string as returned by Spotify: `"YYYY"`, `"YYYY-MM"`, or `"YYYY-MM-DD"`).
+
+Note: `total_tracks` is intentionally excluded. Although the Spotify albums endpoint returns it, classification uses the actual track count from the tracks endpoint (`len(durations)`) rather than this metadata field. Carrying it on `RawRelease` would be speculative — no current logic reads it.
 
 #### Scenario: Fields mapped from API response
 - **WHEN** the API returns an album object

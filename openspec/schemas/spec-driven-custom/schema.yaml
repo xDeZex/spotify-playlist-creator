@@ -256,15 +256,12 @@ apply:
     2. **GREEN** — Write the minimal code to make the test pass. Run the test
        suite and confirm it passes without breaking others. No speculative code.
 
-    3. **REFACTOR** — Clean up only the code touched in this RED/GREEN cycle.
-       Run tests after each refactor step to stay green. Never refactor while RED.
-
-    4. **REVIEW** — Invoke the `code-review` skill, passing the files changed
+    3. **REVIEW** — Invoke the `code-review` skill, passing the files changed
        in this cycle (not the full diff). Fix every finding inline. Only file a
        GitHub issue when the fix is too large or too risky to do now. Do not
        move to the next task until all findings are fixed or filed.
 
-    5. Mark task complete: `- [ ]` → `- [x]`
+    4. Mark task complete: `- [ ]` → `- [x]`
 
     Tests must verify behavior through public interfaces only — not private
     methods or implementation details. A test that breaks on internal rename is
