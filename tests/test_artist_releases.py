@@ -48,14 +48,12 @@ def _release_item(
     album_id: str = "alb1",
     name: str = "Album One",
     album_type: str = "album",
-    total_tracks: int = 10,
     release_date: str = "2021-05-14",
 ) -> dict[str, Any]:
     return {
         "id": album_id,
         "name": name,
         "album_type": album_type,
-        "total_tracks": total_tracks,
         "release_date": release_date,
     }
 
@@ -70,42 +68,24 @@ def test_raw_release_construction() -> None:
         id="alb1",
         name="Album One",
         album_type="album",
-        total_tracks=10,
         release_date="2021-05-14",
     )
     assert r.id == "alb1"
     assert r.name == "Album One"
     assert r.album_type == "album"
-    assert r.total_tracks == 10
     assert r.release_date == "2021-05-14"
 
 
 def test_raw_release_release_date_stored_as_string() -> None:
-    r = RawRelease(
-        id="a", name="X", album_type="album", total_tracks=1, release_date="1997"
-    )
+    r = RawRelease(id="a", name="X", album_type="album", release_date="1997")
     assert r.release_date == "1997"
 
 
 def test_raw_releases_sort_chronologically_by_release_date() -> None:
     releases = [
-        RawRelease(
-            id="c",
-            name="C",
-            album_type="album",
-            total_tracks=10,
-            release_date="2021-05-14",
-        ),
-        RawRelease(
-            id="a", name="A", album_type="album", total_tracks=10, release_date="1997"
-        ),
-        RawRelease(
-            id="b",
-            name="B",
-            album_type="album",
-            total_tracks=10,
-            release_date="2021-03",
-        ),
+        RawRelease(id="c", name="C", album_type="album", release_date="2021-05-14"),
+        RawRelease(id="a", name="A", album_type="album", release_date="1997"),
+        RawRelease(id="b", name="B", album_type="album", release_date="2021-03"),
     ]
     sorted_releases = sorted(releases, key=lambda r: r.release_date)
     assert [r.id for r in sorted_releases] == ["a", "b", "c"]
@@ -159,8 +139,8 @@ def test_fetch_artist_releases_empty_discography() -> None:
 
 def test_fetch_artist_releases_single_page() -> None:
     items = [
-        _release_item("alb1", "Album One", "album", 12, "2020-03-01"),
-        _release_item("alb2", "Single One", "single", 1, "2021-06-15"),
+        _release_item("alb1", "Album One", "album", "2020-03-01"),
+        _release_item("alb2", "Single One", "single", "2021-06-15"),
     ]
     with patch("urllib.request.urlopen", return_value=_make_response(items)):
         result = fetch_artist_releases(_VALID_TOKEN, "artist123")
@@ -170,21 +150,19 @@ def test_fetch_artist_releases_single_page() -> None:
         id="alb1",
         name="Album One",
         album_type="album",
-        total_tracks=12,
         release_date="2020-03-01",
     )
     assert result[1] == RawRelease(
         id="alb2",
         name="Single One",
         album_type="single",
-        total_tracks=1,
         release_date="2021-06-15",
     )
 
 
 def test_fetch_artist_releases_multi_page() -> None:
-    page1 = [_release_item("alb1", "Album One", "album", 10, "2019-01-01")]
-    page2 = [_release_item("alb2", "Album Two", "album", 11, "2021-05-14")]
+    page1 = [_release_item("alb1", "Album One", "album", "2019-01-01")]
+    page2 = [_release_item("alb2", "Album Two", "album", "2021-05-14")]
 
     page_responses = [
         _make_response(

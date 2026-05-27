@@ -15,7 +15,13 @@ class RawRelease:
     id: str
     name: str
     album_type: str
-    total_tracks: int
+    release_date: str
+
+
+@dataclasses.dataclass(frozen=True)
+class Album:
+    id: str
+    name: str
     release_date: str
 
 

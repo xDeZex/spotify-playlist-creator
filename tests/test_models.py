@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime
 
-from spotify_playlist_creator.models import Artist, SavedAlbum
+import pytest
+
+from spotify_playlist_creator.models import Album, Artist, SavedAlbum
 
 
 def test_artist_construction() -> None:
@@ -41,3 +44,21 @@ def test_saved_album_preserves_artist_order() -> None:
     )
     assert album.artists[0] == a1
     assert album.artists[1] == a2
+
+
+# ---------------------------------------------------------------------------
+# Album model
+# ---------------------------------------------------------------------------
+
+
+def test_album_construction() -> None:
+    album = Album(id="alb1", name="Album One", release_date="2021-05-14")
+    assert album.id == "alb1"
+    assert album.name == "Album One"
+    assert album.release_date == "2021-05-14"
+
+
+def test_album_is_frozen() -> None:
+    album = Album(id="alb1", name="Album One", release_date="2021-05-14")
+    with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
+        album.name = "other"  # type: ignore[misc]

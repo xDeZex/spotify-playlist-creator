@@ -9,7 +9,7 @@ An album the user has saved to their Spotify library. Used only to determine whi
 _Avoid_: Liked album, followed album, favorited album
 
 **Artist Folder**:
-A Spotify playlist folder named after a Spotify artist, containing Album Playlists for every Release by that artist. Two artists with the same name but different Spotify IDs produce two separate folders.
+A Spotify playlist folder named after a Spotify artist, containing Album Playlists for every Album by that artist. Two artists with the same name but different Spotify IDs produce two separate folders.
 _Avoid_: Artist directory, artist group
 
 **Artist**:
@@ -21,15 +21,15 @@ The first artist listed in Spotify's artist array for an album. Determines which
 _Avoid_: Main artist, lead artist
 
 **Album Playlist**:
-A Spotify playlist representing one album or EP — contains all tracks from that release — living inside an Artist Folder.
+A Spotify playlist representing one Album — contains all tracks from that Album — living inside an Artist Folder.
 _Avoid_: Album copy, album mirror
 
-**Release**:
-A full album or EP by an artist. Singles and compilations are excluded. EPs are identified using Spotify's own classification rules: 4–6 tracks with ≤30 min total, or 1–3 tracks where at least one exceeds 10 min and total exceeds 30 min.
-_Avoid_: Album (when the distinction between full albums and EPs matters)
+**Album**:
+A release from an artist's discography that qualifies for organisation: either a full album (Spotify `album_type: "album"`) or an EP. EPs are identified using Spotify's own classification rules: 4–6 tracks with ≤30 min total, or 1–3 tracks where at least one exceeds 10 min and total exceeds 30 min. Actual singles are excluded.
+_Avoid_: Release
 
 **Sync**:
-The script's run mode — for each artist in scope (respecting the Artist Limit), ensures every Release has an Album Playlist inside the artist's Artist Folder. Additive only: existing playlists and folders are never deleted, but new releases from known artists are picked up on each run. All names taken from Spotify as-is. See [ADR-0002](./docs/adr/0002-sync-is-additive-only.md).
+The script's run mode — for each artist in scope (respecting the Artist Limit), ensures every Album has an Album Playlist inside the artist's Artist Folder. Additive only: existing playlists and folders are never deleted, but new Albums from known artists are picked up on each run. All names taken from Spotify as-is. See [ADR-0002](./docs/adr/0002-sync-is-additive-only.md).
 _Avoid_: Refresh, rebuild, recreate
 
 **Artist Limit**:
@@ -40,11 +40,11 @@ _Avoid_: Batch size, chunk
 
 > "I saved three Radiohead albums. Does the script create playlists only for those three?"
 
-No — the Saved Albums tell the script *which artists* to include. Once Radiohead is discovered, the script fetches all of Radiohead's Releases from Spotify and creates an Album Playlist for each one inside the Radiohead Artist Folder.
+No — the Saved Albums tell the script *which artists* to include. Once Radiohead is discovered, the script fetches all of Radiohead's Albums from Spotify and creates an Album Playlist for each one inside the Radiohead Artist Folder.
 
 > "What about the EP they released? Is that included?"
 
-Yes, if it qualifies as a Release — meaning it meets Spotify's EP classification rules (4–6 tracks ≤30 min, or 1–3 tracks with one over 10 min and total over 30 min). Actual singles are excluded.
+Yes — EPs qualify as Albums. If it meets Spotify's EP rules (4–6 tracks ≤30 min, or 1–3 tracks with one over 10 min and total over 30 min), it gets an Album Playlist just like a full album would.
 
 > "I un-saved one of those albums last week. Will its playlist be deleted next time I sync?"
 
