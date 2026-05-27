@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "skills": {
+    "code-review": {
+      "source": "xDeZex/skills",
+      "sourceType": "github",
+      "skillPath": "skills/code-review/SKILL.md",
+      "computedHash": "7cdddfece37d3b824eee6fac96370eb2c5c5a2ce90d5139cd99d0ae02ace0a39"
+    },
+    "grill-with-docs": {
+      "source": "xDeZex/skills",
+      "sourceType": "github",
+      "skillPath": "skills/grill-with-docs/SKILL.md",
+      "computedHash": "8354e469fab8f7fdad2cbd6c13f97a8d35f18be4d2e4da7079ddd4d1139b9ae9"
+    },
+    "impl": {
+      "source": "xDeZex/skills",
+      "sourceType": "github",
+      "skillPath": "skills/impl/SKILL.md",
+      "computedHash": "455379200193ba9726ddc0680a3ae28abf4f31e3b314bed7bb29a977e1ef30a8"
+    },
+    "improve-codebase-architecture": {
+      "source": "xDeZex/skills",
+      "sourceType": "github",
+      "skillPath": "skills/improve-codebase-architecture/SKILL.md",
+      "computedHash": "5d9444ffe5c240f2d20081c42c547112e1b8c372375a14e4c98df4d94bde11e1"
+    },
+    "openspec-apply-change": {
+      "source": "xDeZex/skills",
+      "sourceType": "github",
+      "skillPath": "skills/openspec-apply-change/SKILL.md",
+      "computedHash": "51f136a77fa860357706ca7921e233a0abe12818016c6d1d2a4be35c9c9dc20c"
+    },
+    "openspec-archive-change": {
+      "source": "xDeZex/skills",
+      "sourceType": "github",
+      "skillPath": "skills/openspec-archive-change/SKILL.md",
+      "computedHash": "9abbfa32578dbed1d36fff46f3fee9b93f3dde79210e37eb8aaf39f07f806513"
+    },
+    "openspec-explore": {
+      "source": "xDeZex/skills",
+      "sourceType": "github",
+      "skillPath": "skills/openspec-explore/SKILL.md",
+      "computedHash": "6e2ed9a45714302affb4c5301c98a708efad2ecc05f3aa12f2c226b718c395f9"
+    },
+    "openspec-propose": {
+      "source": "xDeZex/skills",
+      "sourceType": "github",
+      "skillPath": "skills/openspec-propose/SKILL.md",
+      "computedHash": "370804162a0242e5856eae069710b707eae103f25d6a29b0595132294fdc117f"
+    },
+    "parallel-issues": {
+      "source": "xDeZex/skills",
+      "sourceType": "github",
+      "skillPath": "skills/parallel-issues/SKILL.md",
+      "computedHash": "a71ca8ae6181b813f937948663c0c27691cdc2f8cfd0f082b55d1b6caf88b10e"
+    }
+  }
+}
