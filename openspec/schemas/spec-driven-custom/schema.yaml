@@ -85,6 +85,9 @@ artifacts:
 
       - Every requirement MUST have at least one scenario.
 
+      - Include scenarios at exact boundary values — not just clearly inside or
+      outside — and for degenerate inputs (empty, zero, absent).
+
 
       MODIFIED requirements workflow:
 
@@ -269,6 +272,9 @@ apply:
 
     Test fixtures must be deterministic — use fixed constants, not values that
     vary between runs.
+
+    Tests must assert all observable consequences of the behavior — return
+    value, side effects, and call counts — not just the primary output.
 
     Pause if: the RED test won't fail (resolve with user), GREEN breaks unrelated
     tests, or implementation reveals a design issue (suggest updating artifacts).
