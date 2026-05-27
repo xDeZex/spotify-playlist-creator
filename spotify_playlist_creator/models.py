@@ -10,6 +10,15 @@ class Artist:
     name: str
 
 
+@dataclasses.dataclass(frozen=True)
+class RawRelease:
+    id: str
+    name: str
+    album_type: str
+    total_tracks: int
+    release_date: str
+
+
 @dataclasses.dataclass
 class SavedAlbum:
     id: str
