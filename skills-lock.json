@@ -5,7 +5,13 @@
       "source": "xDeZex/skills",
       "sourceType": "github",
       "skillPath": "skills/code-review/SKILL.md",
-      "computedHash": "7cdddfece37d3b824eee6fac96370eb2c5c5a2ce90d5139cd99d0ae02ace0a39"
+      "computedHash": "dc5ca79c9c47be9f01c4f85c7dd45eb856591c4c66ed9c0bf8d11b0eac3fb9b2"
+    },
+    "commit": {
+      "source": "xDeZex/skills",
+      "sourceType": "github",
+      "skillPath": "skills/commit/SKILL.md",
+      "computedHash": "96212c0ad57417f591cbc31fe461babdc6bda7fc264605f5e13fa3a62daac16c"
     },
     "grill-with-docs": {
       "source": "xDeZex/skills",
@@ -48,6 +54,12 @@
       "sourceType": "github",
       "skillPath": "skills/openspec-propose/SKILL.md",
       "computedHash": "370804162a0242e5856eae069710b707eae103f25d6a29b0595132294fdc117f"
+    },
+    "openspec-schema-spec-driven-custom": {
+      "source": "xDeZex/skills",
+      "sourceType": "github",
+      "skillPath": "skills/openspec-schema-spec-driven-custom/SKILL.md",
+      "computedHash": "57f945de3785b9b5af175a30c229cf8ed91dfed098696c1cb636520af6953ae5"
     },
     "parallel-issues": {
       "source": "xDeZex/skills",

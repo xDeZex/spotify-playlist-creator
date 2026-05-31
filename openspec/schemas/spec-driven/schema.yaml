@@ -1,6 +1,6 @@
-name: spec-driven-custom
+name: spec-driven
 version: 1
-description: Default OpenSpec workflow - proposal → specs → [design] → tasks
+description: Customized spec-driven workflow with strict TDD (RED→GREEN→REVIEW→COMMIT per task, adversarial fixtures, multi-category scenarios) — proposal → specs → [design] → tasks
 artifacts:
   - id: proposal
     generates: proposal.md
@@ -83,10 +83,10 @@ artifacts:
       - **CRITICAL**: Scenarios MUST use exactly 4 hashtags (`####`). Using 3
       hashtags or bullets will fail silently.
 
-      - Every requirement MUST have at least one scenario.
-
-      - Include scenarios at exact boundary values — not just clearly inside or
-      outside — and for degenerate inputs (empty, zero, absent).
+      - Every requirement MUST have all three scenario categories:
+        - A **happy-path** scenario (valid inputs, expected success)
+        - An **error/rejection** scenario (invalid or empty input that the system rejects or handles gracefully)
+        - A **contract** scenario (correct parameters forwarded to external systems) — required only when the requirement involves external I/O; omit otherwise
 
 
       MODIFIED requirements workflow:
@@ -249,9 +249,22 @@ apply:
 
     For each task:
 
-    1. **RED** — Write a failing test that specifies the behavior. Run the test
-       suite and confirm the new test fails. Do not proceed if it passes (the
-       behavior already exists or the test is wrong).
+    1. **RED** — Write a failing test that specifies the behavior.
+
+       **Lateral consistency check**: Before writing the test, scan functions with
+       similar signatures or in the same module. Note every category of assertion
+       they make (null guard, boundary, sort order, deduplication, etc.). The new
+       test MUST cover every category that is logically applicable to this behavior.
+       If a guard exists on three of four similar functions, it belongs on the fourth.
+
+       **Adversarial fixture principle**: Design fixtures so the test can only pass
+       if the behavior is correctly applied. If the requirement is about sorting,
+       the input must be unsorted. If the requirement is about deduplication, the
+       input must have duplicates. A fixture that already satisfies the postcondition
+       is not a test — replace it.
+
+       Run the test suite and confirm the new test fails. Do not proceed if it passes
+       (the behavior already exists or the test is wrong).
 
     2. **GREEN** — Write the minimal code to make the test pass. Run the test
        suite and confirm it passes without breaking others. No speculative code.
@@ -263,15 +276,16 @@ apply:
 
     4. Mark task complete: `- [ ]` → `- [x]`
 
+    5. **COMMIT** — Commit all changes for this cycle (implementation, tests, and the
+       updated task checkbox) in one commit. Code-review fix commits use the message
+       format: `fix: review finding — <short description>`
+
     Tests must verify behavior through public interfaces only — not private
     methods or implementation details. A test that breaks on internal rename is
     testing the wrong thing.
 
     Test fixtures must be deterministic — use fixed constants, not values that
     vary between runs.
-
-    Tests must assert all observable consequences of the behavior — return
-    value, side effects, and call counts — not just the primary output.
 
     Pause if: the RED test won't fail (resolve with user), GREEN breaks unrelated
     tests, or implementation reveals a design issue (suggest updating artifacts).
