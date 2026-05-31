@@ -1,6 +1,6 @@
 # Spotify Playlist Creator
 
-A script that reads a user's Spotify saved albums and organizes them inside Spotify itself — creating one folder per artist, each containing one playlist per album.
+A script that reads a user's Spotify saved albums and organizes them inside Spotify itself — creating one Album Playlist per Album per artist, then prompting the user to place them into an Artist Folder.
 
 ## Language
 
@@ -29,7 +29,7 @@ A release from an artist's discography that qualifies for organisation: either a
 _Avoid_: Release
 
 **Sync**:
-The script's run mode — for each artist in scope (respecting the Artist Limit), ensures every Album has an Album Playlist inside the artist's Artist Folder. Additive only: existing playlists and folders are never deleted, but new Albums from known artists are picked up on each run. All names taken from Spotify as-is. See [ADR-0002](./docs/adr/0002-sync-is-additive-only.md).
+The script's run mode — for each artist in scope (respecting the Artist Limit), ensures every Album has an Album Playlist. When new Album Playlists are created for an artist, the script pauses and prompts the user to place them in the Artist Folder manually; artists with no new playlists are skipped silently. Additive only: existing playlists are never deleted, but new Albums from known artists are picked up on each run. All names taken from Spotify as-is. See [ADR-0002](./docs/adr/0002-sync-is-additive-only.md).
 _Avoid_: Refresh, rebuild, recreate
 
 **Artist Limit**:
@@ -40,7 +40,7 @@ _Avoid_: Batch size, chunk
 
 > "I saved three Radiohead albums. Does the script create playlists only for those three?"
 
-No — the Saved Albums tell the script *which artists* to include. Once Radiohead is discovered, the script fetches all of Radiohead's Albums from Spotify and creates an Album Playlist for each one inside the Radiohead Artist Folder.
+No — the Saved Albums tell the script *which artists* to include. Once Radiohead is discovered, the script fetches all of Radiohead's Albums from Spotify and creates an Album Playlist for each one, then prompts you to place them in the Radiohead Artist Folder.
 
 > "What about the EP they released? Is that included?"
 
@@ -49,3 +49,7 @@ Yes — EPs qualify as Albums. If it meets Spotify's EP rules (4–6 tracks ≤3
 > "I un-saved one of those albums last week. Will its playlist be deleted next time I sync?"
 
 No. Sync is additive only — it creates what's missing, never removes what's there.
+
+> "Does the script put the playlists into the folder for me?"
+
+No — the script creates the Album Playlists and prints the list, then waits. You create the Artist Folder in Spotify and drag the playlists in, then press Enter to continue to the next artist.

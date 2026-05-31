@@ -206,6 +206,7 @@ def test_authenticate_auth_url_has_required_params(
     assert params["response_type"] == "code"
     assert params.get("state"), "state nonce missing"
     assert params.get("scope"), "scope missing"
+    assert "playlist-modify-public" in params["scope"].split()
 
 
 def test_authenticate_prints_auth_url_to_stdout(
