@@ -1,3 +1,7 @@
+# Claude Code / agent tooling
+.claude/
+.agents/
+
 # Environment
 .env
 *.env
