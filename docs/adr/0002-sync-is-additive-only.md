@@ -4,4 +4,4 @@ When the script runs, it only creates Artist Folders and Album Playlists that do
 
 ## Consequences
 
-Album Playlists are created in ascending release-date order so that the initial folder display matches chronological order (Spotify orders playlists within a folder by insertion time, with no API to reorder them). On subsequent Syncs, newly discovered releases are appended to the end of the folder regardless of where they fall chronologically — folder order is only guaranteed to be chronological after the very first Sync for an artist.
+Album Playlists are created in descending release-date order (newest first). Spotify's library shows most-recently-added items at the top, so after creation the earliest album sits at the top of the list — the first one the user grabs when filling the Artist Folder, landing it first (and therefore topmost) inside the folder. Chronological order inside the folder is only guaranteed after the first Sync for an artist; newly created playlists on subsequent Syncs appear at the top of the library and must be inserted into the folder manually at the correct position.
