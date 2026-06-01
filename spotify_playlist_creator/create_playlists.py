@@ -102,7 +102,6 @@ def add_tracks_to_playlist(
 
 def create_album_playlists(
     token: SpotifyToken,
-    user_id: str,
     albums: list[Album],
     existing_playlists: dict[str, list[str]],
 ) -> list[CreatedPlaylist]:
@@ -119,7 +118,7 @@ def create_album_playlists(
     for album in new_albums:
         data = json.dumps({"name": album.name, "public": True}).encode()
         req = urllib.request.Request(
-            f"{_API_BASE}/users/{user_id}/playlists",
+            f"{_API_BASE}/me/playlists",
             data=data,
             headers={
                 "Authorization": f"Bearer {token.access_token}",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import urllib.request as urllib_request
 from typing import Any
@@ -34,8 +35,6 @@ _EMPTY_TOKEN = SpotifyToken(
     refresh_token="rtoken",
     expires_at=9_999_999_999.0,
 )
-
-_USER_ID = "user123"
 
 
 def _create_playlist_response(playlist_id: str, name: str) -> Any:
@@ -276,7 +275,7 @@ def test_create_album_playlists_creates_playlist_for_each_new_album() -> None:
     resp_iter = iter(responses)
 
     with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
-        result = create_album_playlists(_TOKEN, _USER_ID, albums, existing)
+        result = create_album_playlists(_TOKEN, albums, existing)
 
     assert len(result) == 2
     assert {r.name for r in result} == {"Album One", "Album Two"}
@@ -292,14 +291,14 @@ def test_create_album_playlists_processes_in_descending_release_date_order() -> 
 
     def fake_urlopen(req: Any) -> Any:
         url = req.full_url if hasattr(req, "full_url") else str(req)
-        if "users" in url:
+        if "/me/playlists" in url:
             name = json.loads(req.data.decode())["name"]
             created_order.append(name)
             return _create_playlist_response("pid", name)
         return _tracks_page([])
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        create_album_playlists(_TOKEN, _USER_ID, albums, {})
+        create_album_playlists(_TOKEN, albums, {})
 
     assert created_order == ["Newest", "Middle", "Oldest"]
 
@@ -313,13 +312,13 @@ def test_create_album_playlists_returns_in_descending_release_date_order() -> No
 
     def fake_urlopen(req: Any) -> Any:
         url = req.full_url if hasattr(req, "full_url") else str(req)
-        if "users" in url:
+        if "/me/playlists" in url:
             name = json.loads(req.data.decode())["name"]
             return _create_playlist_response("pid", name)
         return _tracks_page([])
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        result = create_album_playlists(_TOKEN, _USER_ID, albums, {})
+        result = create_album_playlists(_TOKEN, albums, {})
 
     assert [r.name for r in result] == ["Newest", "Middle", "Oldest"]
 
@@ -334,14 +333,14 @@ def test_create_album_playlists_sort_handles_mixed_date_precision() -> None:
 
     def fake_urlopen(req: Any) -> Any:
         url = req.full_url if hasattr(req, "full_url") else str(req)
-        if "users" in url:
+        if "/me/playlists" in url:
             name = json.loads(req.data.decode())["name"]
             created_order.append(name)
             return _create_playlist_response("pid", name)
         return _tracks_page([])
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        create_album_playlists(_TOKEN, _USER_ID, albums, {})
+        create_album_playlists(_TOKEN, albums, {})
 
     assert created_order == ["Full Date", "Month Only", "Year Only"]
 
@@ -364,7 +363,7 @@ def test_create_album_playlists_skips_albums_in_existing_names() -> None:
         return_value="a1",
     ) as mock_fingerprint:
         with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
-            result = create_album_playlists(_TOKEN, _USER_ID, albums, existing)
+            result = create_album_playlists(_TOKEN, albums, existing)
 
     mock_fingerprint.assert_called_once_with(_TOKEN, "pid_existing")
     assert len(result) == 1
@@ -382,7 +381,7 @@ def test_create_album_playlists_returns_empty_when_all_exist() -> None:
         return_value="a1",
     ):
         with patch("urllib.request.urlopen") as mock_urlopen:
-            result = create_album_playlists(_TOKEN, _USER_ID, albums, existing)
+            result = create_album_playlists(_TOKEN, albums, existing)
 
     mock_urlopen.assert_not_called()
     assert result == []
@@ -390,7 +389,7 @@ def test_create_album_playlists_returns_empty_when_all_exist() -> None:
 
 def test_create_album_playlists_returns_empty_for_empty_album_list() -> None:
     with patch("urllib.request.urlopen") as mock_urlopen:
-        result = create_album_playlists(_TOKEN, _USER_ID, [], {})
+        result = create_album_playlists(_TOKEN, [], {})
 
     mock_urlopen.assert_not_called()
     assert result == []
@@ -403,7 +402,7 @@ def test_create_album_playlists_skips_track_add_for_album_with_no_tracks() -> No
 
     def fake_urlopen(req: Any) -> Any:
         url = req.full_url if hasattr(req, "full_url") else str(req)
-        if "users" in url:
+        if "/me/playlists" in url:
             create_calls.append(url)
             return _create_playlist_response("p1", "Silent Album")
         if "albums" in url:
@@ -414,7 +413,7 @@ def test_create_album_playlists_skips_track_add_for_album_with_no_tracks() -> No
         raise AssertionError(f"Unexpected URL: {url}")
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        result = create_album_playlists(_TOKEN, _USER_ID, albums, {})
+        result = create_album_playlists(_TOKEN, albums, {})
 
     assert len(result) == 1
     assert result[0].name == "Silent Album"
@@ -446,10 +445,28 @@ def test_create_album_playlists_returns_only_newly_created() -> None:
         side_effect=lambda _tok, pid: fingerprint_map[pid],
     ):
         with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
-            result = create_album_playlists(_TOKEN, _USER_ID, albums, existing)
+            result = create_album_playlists(_TOKEN, albums, existing)
 
     assert len(result) == 1
     assert result[0].name == "Brand New"
+
+
+def test_create_album_playlists_posts_to_me_playlists_endpoint() -> None:
+    albums = [_album("a1", "My Album", "2022-05-01")]
+    captured: list[urllib_request.Request] = []
+
+    def capturing_urlopen(req: urllib_request.Request) -> Any:
+        captured.append(req)
+        if "albums/" in req.full_url:
+            return _tracks_page([])
+        return _create_playlist_response("pl1", "My Album")
+
+    with patch("urllib.request.urlopen", side_effect=capturing_urlopen):
+        create_album_playlists(_TOKEN, albums, {})
+
+    assert "user_id" not in inspect.signature(create_album_playlists).parameters
+    assert "/me/playlists" in captured[0].full_url
+    assert "/users/" not in captured[0].full_url
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +485,7 @@ def test_create_album_playlists_creates_album_with_no_name_collision() -> None:
     resp_iter = iter(responses)
 
     with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
-        result = create_album_playlists(_TOKEN, _USER_ID, [album], existing_playlists)
+        result = create_album_playlists(_TOKEN, [album], existing_playlists)
 
     assert len(result) == 1
     assert result[0].name == "Brand New Album"
@@ -483,9 +500,7 @@ def test_create_album_playlists_skips_album_when_fingerprint_matches() -> None:
         return_value="a1",
     ) as mock_fingerprint:
         with patch("urllib.request.urlopen") as mock_urlopen:
-            result = create_album_playlists(
-                _TOKEN, _USER_ID, [album], existing_playlists
-            )
+            result = create_album_playlists(_TOKEN, [album], existing_playlists)
 
     mock_fingerprint.assert_called_once_with(_TOKEN, "pid1")
     mock_urlopen.assert_not_called()
@@ -506,9 +521,7 @@ def test_create_album_playlists_creates_album_when_fingerprint_differs() -> None
         ]
         resp_iter = iter(responses)
         with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
-            result = create_album_playlists(
-                _TOKEN, _USER_ID, [album], existing_playlists
-            )
+            result = create_album_playlists(_TOKEN, [album], existing_playlists)
 
     assert len(result) == 1
     assert result[0].name == "Self Titled"
@@ -530,9 +543,7 @@ def test_create_album_playlists_creates_album_when_same_named_playlist_is_empty(
         ]
         resp_iter = iter(responses)
         with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
-            result = create_album_playlists(
-                _TOKEN, _USER_ID, [album], existing_playlists
-            )
+            result = create_album_playlists(_TOKEN, [album], existing_playlists)
 
     assert len(result) == 1
     assert result[0].name == "Self Titled"
@@ -561,9 +572,7 @@ def test_create_album_playlists_checks_all_same_named_playlists_before_creating(
         side_effect=fake_fingerprint,
     ):
         with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
-            result = create_album_playlists(
-                _TOKEN, _USER_ID, [album], existing_playlists
-            )
+            result = create_album_playlists(_TOKEN, [album], existing_playlists)
 
     assert fingerprint_calls == ["pid1", "pid2"]
     assert len(result) == 1
@@ -584,9 +593,7 @@ def test_create_album_playlists_skips_album_when_second_of_two_playlists_matches
         side_effect=lambda _tok, pid: fingerprint_map[pid],
     ):
         with patch("urllib.request.urlopen") as mock_urlopen:
-            result = create_album_playlists(
-                _TOKEN, _USER_ID, [album], existing_playlists
-            )
+            result = create_album_playlists(_TOKEN, [album], existing_playlists)
 
     mock_urlopen.assert_not_called()
     assert result == []
@@ -705,7 +712,7 @@ def test_create_album_playlists_populates_tracks_before_returning() -> None:
 
     def fake_urlopen(req: Any) -> Any:
         url = req.full_url if hasattr(req, "full_url") else str(req)
-        if "users" in url:
+        if "/me/playlists" in url:
             call_log.append("create")
             return _create_playlist_response("pl1", "Tracks Album")
         if "albums" in url:
@@ -717,7 +724,7 @@ def test_create_album_playlists_populates_tracks_before_returning() -> None:
         raise AssertionError(f"Unexpected URL: {url}")
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        result = create_album_playlists(_TOKEN, _USER_ID, albums, existing)
+        result = create_album_playlists(_TOKEN, albums, existing)
 
     assert result[0].name == "Tracks Album"
     assert "create" in call_log
