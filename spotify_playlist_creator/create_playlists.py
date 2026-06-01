@@ -100,11 +100,14 @@ def add_tracks_to_playlist(
             response.read()
 
 
-def create_album_playlists(
+def find_missing_album_playlists(
     token: SpotifyToken,
     albums: list[Album],
     existing_playlists: dict[str, list[str]],
-) -> list[CreatedPlaylist]:
+) -> list[Album]:
+    if not token.access_token:
+        raise ValueError("No valid token provided")
+
     def _already_exists(album: Album) -> bool:
         for pid in existing_playlists.get(album.name, []):
             if fetch_first_track_album_id(token, pid) == album.id:
@@ -113,7 +116,13 @@ def create_album_playlists(
 
     new_albums = [a for a in albums if not _already_exists(a)]
     new_albums.sort(key=lambda a: a.release_date, reverse=True)
+    return new_albums
 
+
+def create_album_playlists(
+    token: SpotifyToken,
+    new_albums: list[Album],
+) -> list[CreatedPlaylist]:
     created: list[CreatedPlaylist] = []
     for album in new_albums:
         data = json.dumps({"name": album.name, "public": True}).encode()
