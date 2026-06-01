@@ -14,7 +14,7 @@ When starting brand-new work — a new OpenSpec change or any fresh implementati
 
 ### Commit and review workflow
 
-Each OpenSpec step produces one commit. After each step commit, run the `code-review` skill, fix any findings in a single `fix: review finding — <short description>` commit, then move on. Fix commits at this stage do not trigger another review.
+Each OpenSpec task produces one commit, called `task X.Y: <short description>`. After each task commit, run the `code-review` skill, fix any findings in a single `fix: review finding — <short description>` commit, then move on. Fix commits at this stage do not trigger another review.
 
 Any other `code-review` run — end of OpenSpec, user-triggered, or ad-hoc — uses the full branch diff (`git diff origin/main`) and loops: review → fix (`fix: review finding`) → review again, until no inline-fixable findings remain. Filed-only findings do not keep the loop running.
 
