@@ -17,11 +17,11 @@ class CreatedPlaylist:
     id: str
 
 
-def fetch_user_playlist_names(token: SpotifyToken) -> set[str]:
+def fetch_user_playlists(token: SpotifyToken) -> dict[str, list[str]]:
     if not token.access_token:
         raise ValueError("No valid token provided")
 
-    names: set[str] = set()
+    result: dict[str, list[str]] = {}
     url: str | None = f"{_API_BASE}/me/playlists?limit=50"
 
     while url is not None:
@@ -33,11 +33,30 @@ def fetch_user_playlist_names(token: SpotifyToken) -> set[str]:
             body: dict[str, Any] = json.loads(response.read())
 
         for item in body.get("items", []):
-            names.add(str(item["name"]))
+            name = str(item["name"])
+            playlist_id = str(item["id"])
+            result.setdefault(name, []).append(playlist_id)
 
         url = body.get("next")
 
-    return names
+    return result
+
+
+def fetch_first_track_album_id(token: SpotifyToken, playlist_id: str) -> str | None:
+    if not token.access_token:
+        raise ValueError("No valid token provided")
+
+    req = urllib.request.Request(
+        f"{_API_BASE}/playlists/{playlist_id}/tracks?limit=1",
+        headers={"Authorization": f"Bearer {token.access_token}"},
+    )
+    with urllib.request.urlopen(req) as response:
+        body: dict[str, Any] = json.loads(response.read())
+
+    items = body.get("items", [])
+    if not items:
+        return None
+    return str(items[0]["track"]["album"]["id"])
 
 
 def fetch_album_track_uris(token: SpotifyToken, album_id: str) -> list[str]:
@@ -85,9 +104,15 @@ def create_album_playlists(
     token: SpotifyToken,
     user_id: str,
     albums: list[Album],
-    existing_names: set[str],
+    existing_playlists: dict[str, list[str]],
 ) -> list[CreatedPlaylist]:
-    new_albums = [a for a in albums if a.name not in existing_names]
+    def _already_exists(album: Album) -> bool:
+        for pid in existing_playlists.get(album.name, []):
+            if fetch_first_track_album_id(token, pid) == album.id:
+                return True
+        return False
+
+    new_albums = [a for a in albums if not _already_exists(a)]
     new_albums.sort(key=lambda a: a.release_date, reverse=True)
 
     created: list[CreatedPlaylist] = []
