@@ -21,6 +21,9 @@ _TOKEN = SpotifyToken(
 
 _ARTIST_A = Artist(id="artist_a", name="Artist A")
 _ARTIST_B = Artist(id="artist_b", name="Artist B")
+_ARTIST_C = Artist(id="artist_c", name="Artist C")
+_ARTIST_D = Artist(id="artist_d", name="Artist D")
+_ARTIST_E = Artist(id="artist_e", name="Artist E")
 
 _ALBUM_A1 = Album(id="alb_a1", name="Album A1", release_date="2023-01-01")
 _ALBUM_A2 = Album(id="alb_a2", name="Album A2", release_date="2022-01-01")
@@ -410,3 +413,67 @@ def test_run_forwards_token_to_fetch_artist_releases_classify_and_create() -> No
     mock_releases.assert_called_once_with(_TOKEN, "artist_a")
     mock_classify.assert_called_once_with(_TOKEN, _RAW_A)
     mock_create.assert_called_once_with(_TOKEN, [_ALBUM_A1], _EXISTING_EMPTY)
+
+
+# ---------------------------------------------------------------------------
+# Artist Limit (tasks 2.1–2.4)
+# ---------------------------------------------------------------------------
+
+
+def test_run_applies_artist_limit() -> None:
+    five_artists = [_ARTIST_A, _ARTIST_B, _ARTIST_C, _ARTIST_D, _ARTIST_E]
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[]),
+        patch("spotify_playlist_creator.derive_artists", return_value=five_artists),
+        patch("spotify_playlist_creator.fetch_user_playlists", return_value={}),
+        patch(
+            "spotify_playlist_creator.fetch_artist_releases", return_value=[]
+        ) as mock_releases,
+        patch("spotify_playlist_creator.classify_releases", return_value=[]),
+        patch("spotify_playlist_creator.create_album_playlists", return_value=[]),
+        patch("spotify_playlist_creator.prompt_for_folder"),
+    ):
+        run(limit=2)
+
+    assert mock_releases.call_count == 2
+    mock_releases.assert_any_call(_TOKEN, "artist_a")
+    mock_releases.assert_any_call(_TOKEN, "artist_b")
+
+
+def test_run_with_no_limit_processes_all_artists() -> None:
+    three_artists = [_ARTIST_A, _ARTIST_B, _ARTIST_C]
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[]),
+        patch("spotify_playlist_creator.derive_artists", return_value=three_artists),
+        patch("spotify_playlist_creator.fetch_user_playlists", return_value={}),
+        patch(
+            "spotify_playlist_creator.fetch_artist_releases", return_value=[]
+        ) as mock_releases,
+        patch("spotify_playlist_creator.classify_releases", return_value=[]),
+        patch("spotify_playlist_creator.create_album_playlists", return_value=[]),
+        patch("spotify_playlist_creator.prompt_for_folder"),
+    ):
+        run(limit=None)
+
+    assert mock_releases.call_count == 3
+
+
+def test_run_with_limit_exceeding_artist_count_processes_all() -> None:
+    two_artists = [_ARTIST_A, _ARTIST_B]
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[]),
+        patch("spotify_playlist_creator.derive_artists", return_value=two_artists),
+        patch("spotify_playlist_creator.fetch_user_playlists", return_value={}),
+        patch(
+            "spotify_playlist_creator.fetch_artist_releases", return_value=[]
+        ) as mock_releases,
+        patch("spotify_playlist_creator.classify_releases", return_value=[]),
+        patch("spotify_playlist_creator.create_album_playlists", return_value=[]),
+        patch("spotify_playlist_creator.prompt_for_folder"),
+    ):
+        run(limit=10)
+
+    assert mock_releases.call_count == 2

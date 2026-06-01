@@ -20,10 +20,10 @@ __all__ = [
 ]
 
 
-def run() -> None:
+def run(limit: int | None = None) -> None:
     token: SpotifyToken = authenticate()
     saved_albums = fetch_saved_albums(token)
-    artists = derive_artists(saved_albums)
+    artists = derive_artists(saved_albums)[:limit]
     existing_playlists = fetch_user_playlists(token)
     for artist in artists:
         raw_releases = fetch_artist_releases(token, artist.id)
