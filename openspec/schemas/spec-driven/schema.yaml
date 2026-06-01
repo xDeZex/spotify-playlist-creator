@@ -277,7 +277,7 @@ apply:
     4. Mark task complete: `- [ ]` → `- [x]`
 
     5. **COMMIT** — Commit all changes for this cycle (implementation, tests, and the
-       updated task checkbox) in one commit.
+       updated task checkbox) in one commit. Don't use the commit skill.
 
     Tests must verify behavior through public interfaces only — not private
     methods or implementation details. A test that breaks on internal rename is
