@@ -12,7 +12,8 @@ from spotify_playlist_creator.create_playlists import (
     add_tracks_to_playlist,
     create_album_playlists,
     fetch_album_track_uris,
-    fetch_user_playlist_names,
+    fetch_first_track_album_id,
+    fetch_user_playlists,
 )
 from spotify_playlist_creator.models import Album
 
@@ -35,22 +36,6 @@ _EMPTY_TOKEN = SpotifyToken(
 )
 
 _USER_ID = "user123"
-
-
-def _playlist_page(names: list[str], next_url: str | None = None) -> Any:
-    class _Response:
-        def read(self) -> bytes:
-            return json.dumps(
-                {"items": [{"name": n} for n in names], "next": next_url}
-            ).encode()
-
-        def __enter__(self) -> _Response:
-            return self
-
-        def __exit__(self, *args: Any) -> None:
-            pass
-
-    return _Response()
 
 
 def _create_playlist_response(playlist_id: str, name: str) -> Any:
@@ -97,84 +82,47 @@ def _add_tracks_response() -> Any:
     return _Response()
 
 
+def _playlist_page_with_ids(
+    entries: list[tuple[str, str]], next_url: str | None = None
+) -> Any:
+    class _Response:
+        def read(self) -> bytes:
+            return json.dumps(
+                {
+                    "items": [{"name": n, "id": pid} for n, pid in entries],
+                    "next": next_url,
+                }
+            ).encode()
+
+        def __enter__(self) -> _Response:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            pass
+
+    return _Response()
+
+
+def _first_track_response(album_id: str | None) -> Any:
+    class _Response:
+        def read(self) -> bytes:
+            if album_id is None:
+                body: dict[str, Any] = {"items": []}
+            else:
+                body = {"items": [{"track": {"album": {"id": album_id}}}]}
+            return json.dumps(body).encode()
+
+        def __enter__(self) -> _Response:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            pass
+
+    return _Response()
+
+
 def _album(album_id: str, name: str, release_date: str) -> Album:
     return Album(id=album_id, name=name, release_date=release_date)
-
-
-# ---------------------------------------------------------------------------
-# Group 1: fetch_user_playlist_names
-# ---------------------------------------------------------------------------
-
-
-def test_fetch_user_playlist_names_returns_all_names() -> None:
-    with patch(
-        "urllib.request.urlopen",
-        return_value=_playlist_page(["Alpha", "Beta", "Gamma"]),
-    ):
-        result = fetch_user_playlist_names(_TOKEN)
-
-    assert result == {"Alpha", "Beta", "Gamma"}
-
-
-# ---------------------------------------------------------------------------
-# Group 1.2: fetch_user_playlist_names follows pagination
-# ---------------------------------------------------------------------------
-
-
-def test_fetch_user_playlist_names_follows_pagination() -> None:
-    responses = [
-        _playlist_page(
-            ["Alpha", "Beta"],
-            next_url="https://api.spotify.com/v1/me/playlists?offset=50",
-        ),
-        _playlist_page(["Gamma"], next_url=None),
-    ]
-    resp_iter = iter(responses)
-
-    with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
-        result = fetch_user_playlist_names(_TOKEN)
-
-    assert result == {"Alpha", "Beta", "Gamma"}
-
-
-# ---------------------------------------------------------------------------
-# Group 1.3: fetch_user_playlist_names returns empty set when no playlists
-# ---------------------------------------------------------------------------
-
-
-def test_fetch_user_playlist_names_empty_library() -> None:
-    with patch("urllib.request.urlopen", return_value=_playlist_page([])):
-        result = fetch_user_playlist_names(_TOKEN)
-
-    assert result == set()
-
-
-def test_fetch_user_playlist_names_deduplicates_names() -> None:
-    with patch("urllib.request.urlopen", return_value=_playlist_page(["X", "X", "Y"])):
-        result = fetch_user_playlist_names(_TOKEN)
-
-    assert result == {"X", "Y"}
-
-
-def test_fetch_user_playlist_names_sends_auth_header() -> None:
-    captured: list[urllib_request.Request] = []
-
-    def capturing_urlopen(req: urllib_request.Request) -> Any:
-        captured.append(req)
-        return _playlist_page([])
-
-    with patch("urllib.request.urlopen", side_effect=capturing_urlopen):
-        fetch_user_playlist_names(_TOKEN)
-
-    assert len(captured) == 1
-    assert captured[0].get_header("Authorization") == "Bearer test_tok"
-
-
-def test_fetch_user_playlist_names_raises_for_empty_token() -> None:
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        with pytest.raises(ValueError):
-            fetch_user_playlist_names(_EMPTY_TOKEN)
-    mock_urlopen.assert_not_called()
 
 
 def test_fetch_album_track_uris_raises_for_empty_token() -> None:
@@ -182,6 +130,128 @@ def test_fetch_album_track_uris_raises_for_empty_token() -> None:
         with pytest.raises(ValueError):
             fetch_album_track_uris(_EMPTY_TOKEN, "alb1")
     mock_urlopen.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Group 1a: fetch_user_playlists — name-to-IDs map
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_user_playlists_returns_name_to_ids_map() -> None:
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_playlist_page_with_ids(
+            [("Alpha", "id1"), ("Beta", "id2"), ("Gamma", "id3")]
+        ),
+    ):
+        result = fetch_user_playlists(_TOKEN)
+
+    assert result == {"Alpha": ["id1"], "Beta": ["id2"], "Gamma": ["id3"]}
+
+
+def test_fetch_user_playlists_raises_for_empty_token() -> None:
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        with pytest.raises(ValueError):
+            fetch_user_playlists(_EMPTY_TOKEN)
+    mock_urlopen.assert_not_called()
+
+
+def test_fetch_user_playlists_sends_auth_header() -> None:
+    captured: list[urllib_request.Request] = []
+
+    def capturing_urlopen(req: urllib_request.Request) -> Any:
+        captured.append(req)
+        return _playlist_page_with_ids([])
+
+    with patch("urllib.request.urlopen", side_effect=capturing_urlopen):
+        fetch_user_playlists(_TOKEN)
+
+    assert len(captured) == 1
+    assert captured[0].get_header("Authorization") == "Bearer test_tok"
+
+
+def test_fetch_user_playlists_returns_empty_for_no_playlists() -> None:
+    with patch("urllib.request.urlopen", return_value=_playlist_page_with_ids([])):
+        result = fetch_user_playlists(_TOKEN)
+
+    assert result == {}
+
+
+def test_fetch_user_playlists_collects_duplicate_names_into_same_bucket() -> None:
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_playlist_page_with_ids(
+            [("Self Titled", "pid1"), ("Other", "pid2"), ("Self Titled", "pid3")]
+        ),
+    ):
+        result = fetch_user_playlists(_TOKEN)
+
+    assert result["Self Titled"] == ["pid1", "pid3"]
+    assert result["Other"] == ["pid2"]
+
+
+def test_fetch_user_playlists_follows_pagination() -> None:
+    responses = [
+        _playlist_page_with_ids(
+            [("Alpha", "id1"), ("Beta", "id2")],
+            next_url="https://api.spotify.com/v1/me/playlists?offset=50",
+        ),
+        _playlist_page_with_ids([("Gamma", "id3")], next_url=None),
+    ]
+    resp_iter = iter(responses)
+
+    with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
+        result = fetch_user_playlists(_TOKEN)
+
+    assert result == {"Alpha": ["id1"], "Beta": ["id2"], "Gamma": ["id3"]}
+
+
+# ---------------------------------------------------------------------------
+# Group 1b: fetch_first_track_album_id — fingerprinting helper
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_first_track_album_id_returns_album_id_of_first_track() -> None:
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_first_track_response("album_abc"),
+    ):
+        result = fetch_first_track_album_id(_TOKEN, "playlist_xyz")
+
+    assert result == "album_abc"
+
+
+def test_fetch_first_track_album_id_raises_for_empty_token() -> None:
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        with pytest.raises(ValueError):
+            fetch_first_track_album_id(_EMPTY_TOKEN, "playlist_xyz")
+    mock_urlopen.assert_not_called()
+
+
+def test_fetch_first_track_album_id_sends_auth_header_with_limit_1() -> None:
+    captured: list[urllib_request.Request] = []
+
+    def capturing_urlopen(req: urllib_request.Request) -> Any:
+        captured.append(req)
+        return _first_track_response("alb1")
+
+    with patch("urllib.request.urlopen", side_effect=capturing_urlopen):
+        fetch_first_track_album_id(_TOKEN, "pl1")
+
+    assert len(captured) == 1
+    assert captured[0].get_header("Authorization") == "Bearer test_tok"
+    assert "pl1" in captured[0].full_url
+    assert "limit=1" in captured[0].full_url
+
+
+def test_fetch_first_track_album_id_returns_none_for_empty_playlist() -> None:
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_first_track_response(None),
+    ):
+        result = fetch_first_track_album_id(_TOKEN, "empty_playlist")
+
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +265,7 @@ def test_create_album_playlists_creates_playlist_for_each_new_album() -> None:
         _album("a1", "Album One", "2021-06-15"),
         _album("a2", "Album Two", "2020-01-01"),
     ]
-    existing: set[str] = set()
+    existing: dict[str, list[str]] = {}
 
     responses = [
         _create_playlist_response("p1", "Album One"),
@@ -229,7 +299,7 @@ def test_create_album_playlists_processes_in_descending_release_date_order() -> 
         return _tracks_page([])
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        create_album_playlists(_TOKEN, _USER_ID, albums, set())
+        create_album_playlists(_TOKEN, _USER_ID, albums, {})
 
     assert created_order == ["Newest", "Middle", "Oldest"]
 
@@ -249,7 +319,7 @@ def test_create_album_playlists_returns_in_descending_release_date_order() -> No
         return _tracks_page([])
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        result = create_album_playlists(_TOKEN, _USER_ID, albums, set())
+        result = create_album_playlists(_TOKEN, _USER_ID, albums, {})
 
     assert [r.name for r in result] == ["Newest", "Middle", "Oldest"]
 
@@ -271,7 +341,7 @@ def test_create_album_playlists_sort_handles_mixed_date_precision() -> None:
         return _tracks_page([])
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        create_album_playlists(_TOKEN, _USER_ID, albums, set())
+        create_album_playlists(_TOKEN, _USER_ID, albums, {})
 
     assert created_order == ["Full Date", "Month Only", "Year Only"]
 
@@ -281,7 +351,7 @@ def test_create_album_playlists_skips_albums_in_existing_names() -> None:
         _album("a1", "Existing", "2020-01-01"),
         _album("a2", "New One", "2021-01-01"),
     ]
-    existing = {"Existing"}
+    existing: dict[str, list[str]] = {"Existing": ["pid_existing"]}
 
     responses = [
         _create_playlist_response("p2", "New One"),
@@ -289,9 +359,14 @@ def test_create_album_playlists_skips_albums_in_existing_names() -> None:
     ]
     resp_iter = iter(responses)
 
-    with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
-        result = create_album_playlists(_TOKEN, _USER_ID, albums, existing)
+    with patch(
+        "spotify_playlist_creator.create_playlists.fetch_first_track_album_id",
+        return_value="a1",
+    ) as mock_fingerprint:
+        with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
+            result = create_album_playlists(_TOKEN, _USER_ID, albums, existing)
 
+    mock_fingerprint.assert_called_once_with(_TOKEN, "pid_existing")
     assert len(result) == 1
     assert result[0].name == "New One"
 
@@ -300,10 +375,14 @@ def test_create_album_playlists_returns_empty_when_all_exist() -> None:
     albums = [
         _album("a1", "Already Here", "2020-01-01"),
     ]
-    existing = {"Already Here"}
+    existing: dict[str, list[str]] = {"Already Here": ["pid1"]}
 
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        result = create_album_playlists(_TOKEN, _USER_ID, albums, existing)
+    with patch(
+        "spotify_playlist_creator.create_playlists.fetch_first_track_album_id",
+        return_value="a1",
+    ):
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            result = create_album_playlists(_TOKEN, _USER_ID, albums, existing)
 
     mock_urlopen.assert_not_called()
     assert result == []
@@ -311,7 +390,7 @@ def test_create_album_playlists_returns_empty_when_all_exist() -> None:
 
 def test_create_album_playlists_returns_empty_for_empty_album_list() -> None:
     with patch("urllib.request.urlopen") as mock_urlopen:
-        result = create_album_playlists(_TOKEN, _USER_ID, [], set())
+        result = create_album_playlists(_TOKEN, _USER_ID, [], {})
 
     mock_urlopen.assert_not_called()
     assert result == []
@@ -335,7 +414,7 @@ def test_create_album_playlists_skips_track_add_for_album_with_no_tracks() -> No
         raise AssertionError(f"Unexpected URL: {url}")
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        result = create_album_playlists(_TOKEN, _USER_ID, albums, set())
+        result = create_album_playlists(_TOKEN, _USER_ID, albums, {})
 
     assert len(result) == 1
     assert result[0].name == "Silent Album"
@@ -349,7 +428,12 @@ def test_create_album_playlists_returns_only_newly_created() -> None:
         _album("a2", "Brand New", "2022-05-01"),
         _album("a3", "Also Pre-existing", "2020-06-01"),
     ]
-    existing = {"Pre-existing", "Also Pre-existing"}
+    existing: dict[str, list[str]] = {
+        "Pre-existing": ["pid_pre"],
+        "Also Pre-existing": ["pid_also"],
+    }
+
+    fingerprint_map = {"pid_pre": "a1", "pid_also": "a3"}
 
     responses = [
         _create_playlist_response("p2", "Brand New"),
@@ -357,20 +441,159 @@ def test_create_album_playlists_returns_only_newly_created() -> None:
     ]
     resp_iter = iter(responses)
 
-    with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
-        result = create_album_playlists(_TOKEN, _USER_ID, albums, existing)
+    with patch(
+        "spotify_playlist_creator.create_playlists.fetch_first_track_album_id",
+        side_effect=lambda _tok, pid: fingerprint_map[pid],
+    ):
+        with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
+            result = create_album_playlists(_TOKEN, _USER_ID, albums, existing)
 
     assert len(result) == 1
     assert result[0].name == "Brand New"
 
 
 # ---------------------------------------------------------------------------
-# Group 3: prompt_for_folder is tested in test_folder_prompt.py
+# Group 3: collision-aware create_album_playlists
 # ---------------------------------------------------------------------------
 
 
+def test_create_album_playlists_creates_album_with_no_name_collision() -> None:
+    album = _album("a1", "Brand New Album", "2023-01-01")
+    existing_playlists: dict[str, list[str]] = {}
+
+    responses = [
+        _create_playlist_response("p1", "Brand New Album"),
+        _tracks_page([]),
+    ]
+    resp_iter = iter(responses)
+
+    with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
+        result = create_album_playlists(_TOKEN, _USER_ID, [album], existing_playlists)
+
+    assert len(result) == 1
+    assert result[0].name == "Brand New Album"
+
+
+def test_create_album_playlists_skips_album_when_fingerprint_matches() -> None:
+    album = _album("a1", "Self Titled", "2023-01-01")
+    existing_playlists: dict[str, list[str]] = {"Self Titled": ["pid1"]}
+
+    with patch(
+        "spotify_playlist_creator.create_playlists.fetch_first_track_album_id",
+        return_value="a1",
+    ) as mock_fingerprint:
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            result = create_album_playlists(
+                _TOKEN, _USER_ID, [album], existing_playlists
+            )
+
+    mock_fingerprint.assert_called_once_with(_TOKEN, "pid1")
+    mock_urlopen.assert_not_called()
+    assert result == []
+
+
+def test_create_album_playlists_creates_album_when_fingerprint_differs() -> None:
+    album = _album("a1", "Self Titled", "2023-01-01")
+    existing_playlists: dict[str, list[str]] = {"Self Titled": ["pid_other"]}
+
+    with patch(
+        "spotify_playlist_creator.create_playlists.fetch_first_track_album_id",
+        return_value="other_album_id",
+    ):
+        responses = [
+            _create_playlist_response("new_pid", "Self Titled"),
+            _tracks_page([]),
+        ]
+        resp_iter = iter(responses)
+        with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
+            result = create_album_playlists(
+                _TOKEN, _USER_ID, [album], existing_playlists
+            )
+
+    assert len(result) == 1
+    assert result[0].name == "Self Titled"
+
+
+def test_create_album_playlists_creates_album_when_same_named_playlist_is_empty() -> (
+    None
+):
+    album = _album("a1", "Self Titled", "2023-01-01")
+    existing_playlists: dict[str, list[str]] = {"Self Titled": ["empty_pid"]}
+
+    with patch(
+        "spotify_playlist_creator.create_playlists.fetch_first_track_album_id",
+        return_value=None,
+    ):
+        responses = [
+            _create_playlist_response("new_pid", "Self Titled"),
+            _tracks_page([]),
+        ]
+        resp_iter = iter(responses)
+        with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
+            result = create_album_playlists(
+                _TOKEN, _USER_ID, [album], existing_playlists
+            )
+
+    assert len(result) == 1
+    assert result[0].name == "Self Titled"
+
+
+def test_create_album_playlists_checks_all_same_named_playlists_before_creating() -> (
+    None
+):
+    album = _album("a1", "Self Titled", "2023-01-01")
+    existing_playlists: dict[str, list[str]] = {"Self Titled": ["pid1", "pid2"]}
+
+    fingerprint_calls: list[str] = []
+
+    def fake_fingerprint(_tok: SpotifyToken, pid: str) -> str | None:
+        fingerprint_calls.append(pid)
+        return "other_album_id"
+
+    responses = [
+        _create_playlist_response("new_pid", "Self Titled"),
+        _tracks_page([]),
+    ]
+    resp_iter = iter(responses)
+
+    with patch(
+        "spotify_playlist_creator.create_playlists.fetch_first_track_album_id",
+        side_effect=fake_fingerprint,
+    ):
+        with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
+            result = create_album_playlists(
+                _TOKEN, _USER_ID, [album], existing_playlists
+            )
+
+    assert fingerprint_calls == ["pid1", "pid2"]
+    assert len(result) == 1
+    assert result[0].name == "Self Titled"
+
+
+def test_create_album_playlists_skips_album_when_second_of_two_playlists_matches() -> (
+    None
+):
+    album = _album("a1", "Self Titled", "2023-01-01")
+    existing_playlists: dict[str, list[str]] = {
+        "Self Titled": ["pid_no_match", "pid_match"]
+    }
+    fingerprint_map = {"pid_no_match": "other_id", "pid_match": "a1"}
+
+    with patch(
+        "spotify_playlist_creator.create_playlists.fetch_first_track_album_id",
+        side_effect=lambda _tok, pid: fingerprint_map[pid],
+    ):
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            result = create_album_playlists(
+                _TOKEN, _USER_ID, [album], existing_playlists
+            )
+
+    mock_urlopen.assert_not_called()
+    assert result == []
+
+
 # ---------------------------------------------------------------------------
-# Group 4: OAuth scope — covered in test_auth.py
+# Group 4: prompt_for_folder is tested in test_folder_prompt.py
 # ---------------------------------------------------------------------------
 
 
@@ -475,7 +698,7 @@ def test_add_tracks_to_playlist_batches_over_100() -> None:
 
 def test_create_album_playlists_populates_tracks_before_returning() -> None:
     albums = [_album("a1", "Tracks Album", "2022-01-01")]
-    existing: set[str] = set()
+    existing: dict[str, list[str]] = {}
     track_uris = ["spotify:track:u1", "spotify:track:u2"]
 
     call_log: list[str] = []
