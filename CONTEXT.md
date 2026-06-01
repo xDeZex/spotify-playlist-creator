@@ -29,7 +29,7 @@ A release from an artist's discography that qualifies for organisation: either a
 _Avoid_: Release
 
 **Sync**:
-The script's run mode — for each artist in scope (respecting the Artist Limit), ensures every Album has an Album Playlist. When new Album Playlists are created for an artist, the script pauses and prompts the user to place them in the Artist Folder manually; artists with no new playlists are skipped silently. Additive only: existing playlists are never deleted, but new Albums from known artists are picked up on each run. All names taken from Spotify as-is. See [ADR-0002](./docs/adr/0002-sync-is-additive-only.md).
+The script's run mode — for each artist in scope (respecting the Artist Limit), ensures every Album has an Album Playlist. "Has" is determined by Album identity (Spotify Album ID), not by playlist name — two Albums with the same name are distinct. When new Album Playlists are created for an artist, the script pauses and prompts the user to place them in the Artist Folder manually; artists with no new playlists are skipped silently. Additive only: existing playlists are never deleted, but new Albums from known artists are picked up on each run. All names taken from Spotify as-is. See [ADR-0002](./docs/adr/0002-sync-is-additive-only.md).
 _Avoid_: Refresh, rebuild, recreate
 
 **Artist Limit**:

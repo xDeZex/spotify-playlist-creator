@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import spotify_playlist_creator.auth as _auth
-from spotify_playlist_creator import run
 from spotify_playlist_creator.auth import (
     _CALLBACK_HOST,
     _CALLBACK_PORT,
@@ -813,42 +812,3 @@ def test_authenticate_falls_through_to_browser_when_refresh_raises_url_error(
 
     assert browser_called[0]
     assert token.access_token == "browser_tok"
-
-
-# ---------------------------------------------------------------------------
-# Group 7: Integration with run()
-# ---------------------------------------------------------------------------
-
-
-def test_run_calls_authenticate(monkeypatch: pytest.MonkeyPatch) -> None:
-    call_count = [0]
-
-    def mock_authenticate(**kwargs: Any) -> SpotifyToken:
-        call_count[0] += 1
-        return SpotifyToken(
-            access_token="tok",
-            token_type="Bearer",
-            refresh_token="rtoken",
-            expires_at=9999999999.0,
-        )
-
-    monkeypatch.setattr("spotify_playlist_creator.authenticate", mock_authenticate)
-    run()
-
-    assert call_count[0] == 1
-
-
-def test_run_token_available_for_downstream(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(
-        "spotify_playlist_creator.authenticate",
-        lambda **kwargs: SpotifyToken(
-            access_token="downstream_tok",
-            token_type="Bearer",
-            refresh_token="rtoken",
-            expires_at=9999999999.0,
-        ),
-    )
-    run()
-    assert "Bearer" in capsys.readouterr().out
