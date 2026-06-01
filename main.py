@@ -13,8 +13,9 @@ def _positive_int(value: str) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=_positive_int, default=None)
+    parser.add_argument("--dry-run", action="store_true", default=False)
     args = parser.parse_args()
-    run(limit=args.limit)
+    run(limit=args.limit, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

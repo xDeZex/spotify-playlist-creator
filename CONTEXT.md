@@ -32,6 +32,10 @@ _Avoid_: Release
 The script's run mode — for each artist in scope (respecting the Artist Limit), ensures every Album has an Album Playlist. "Has" is determined by Album identity (Spotify Album ID), not by playlist name — two Albums with the same name are distinct. When new Album Playlists are created for an artist, the script pauses and prompts the user to place them in the Artist Folder manually; artists with no new playlists are skipped silently. Additive only: existing playlists are never deleted, but new Albums from known artists are picked up on each run. All names taken from Spotify as-is. See [ADR-0002](./docs/adr/0002-sync-is-additive-only.md).
 _Avoid_: Refresh, rebuild, recreate
 
+**Dry Sync**:
+A read-only run of the script that performs the same traversal as a Sync — fetching Saved Albums, deriving Artists, checking existing Album Playlists — but skips all writes. Prints what Album Playlists would be created without creating them. Does not pause to prompt the user.
+_Avoid_: Preview, test run, simulation
+
 **Artist Limit**:
 An optional cap on how many artists are processed in a single Sync. When set, the N artists whose albums were saved least recently are processed. Running with the same limit twice processes the same N artists — it is not a progress cursor.
 _Avoid_: Batch size, chunk

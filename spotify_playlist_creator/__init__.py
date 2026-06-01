@@ -4,7 +4,9 @@ from spotify_playlist_creator.classify_releases import classify_releases
 from spotify_playlist_creator.create_playlists import (
     create_album_playlists,
     fetch_user_playlists,
+    find_missing_album_playlists,
 )
+from spotify_playlist_creator.dry_sync import report_dry_sync_artist
 from spotify_playlist_creator.folder_prompt import prompt_for_folder
 from spotify_playlist_creator.models import Artist, SavedAlbum
 from spotify_playlist_creator.saved_albums import derive_artists, fetch_saved_albums
@@ -20,7 +22,7 @@ __all__ = [
 ]
 
 
-def run(limit: int | None = None) -> None:
+def run(limit: int | None = None, dry_run: bool = False) -> None:
     token: SpotifyToken = authenticate()
     saved_albums = fetch_saved_albums(token)
     artists = derive_artists(saved_albums)[:limit]
@@ -28,6 +30,10 @@ def run(limit: int | None = None) -> None:
     for artist in artists:
         raw_releases = fetch_artist_releases(token, artist.id)
         albums = classify_releases(token, raw_releases)
-        created = create_album_playlists(token, albums, existing_playlists)
-        if created:
-            prompt_for_folder(artist.name, created)
+        new_albums = find_missing_album_playlists(token, albums, existing_playlists)
+        if dry_run:
+            report_dry_sync_artist(artist.name, new_albums)
+        else:
+            created = create_album_playlists(token, new_albums)
+            if created:
+                prompt_for_folder(artist.name, created)

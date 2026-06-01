@@ -134,8 +134,12 @@ def test_run_calls_prompt_for_folder_for_each_artist_with_new_playlists() -> Non
             ),
         ),
         patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            side_effect=lambda tok, albums, existing: albums,
+        ),
+        patch(
             "spotify_playlist_creator.create_album_playlists",
-            side_effect=lambda tok, albums, existing: (
+            side_effect=lambda tok, albums: (
                 [_CREATED_A1, _CREATED_A2]
                 if albums == [_ALBUM_A1, _ALBUM_A2]
                 else [_CREATED_B1]
@@ -177,6 +181,10 @@ def test_run_does_not_call_prompt_when_no_new_playlists() -> None:
         patch(
             "spotify_playlist_creator.classify_releases",
             return_value=[_ALBUM_A1, _ALBUM_A2],
+        ),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[],
         ),
         patch(
             "spotify_playlist_creator.create_album_playlists",
@@ -222,8 +230,12 @@ def test_run_calls_prompt_only_for_artists_with_new_playlists() -> None:
             ),
         ),
         patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            side_effect=lambda tok, albums, existing: albums,
+        ),
+        patch(
             "spotify_playlist_creator.create_album_playlists",
-            side_effect=lambda tok, albums, existing: (
+            side_effect=lambda tok, albums: (
                 [_CREATED_A1, _CREATED_A2] if albums == [_ALBUM_A1, _ALBUM_A2] else []
             ),
         ),
@@ -253,6 +265,9 @@ def test_run_does_nothing_when_no_saved_albums() -> None:
         ),
         patch("spotify_playlist_creator.fetch_artist_releases") as mock_releases,
         patch("spotify_playlist_creator.classify_releases") as mock_classify,
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists"
+        ) as mock_find_missing,
         patch("spotify_playlist_creator.create_album_playlists") as mock_create,
         patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
     ):
@@ -261,6 +276,7 @@ def test_run_does_nothing_when_no_saved_albums() -> None:
     mock_derive.assert_called_once_with([])
     mock_releases.assert_not_called()
     mock_classify.assert_not_called()
+    mock_find_missing.assert_not_called()
     mock_create.assert_not_called()
     mock_prompt.assert_not_called()
 
@@ -291,6 +307,10 @@ def test_run_skips_prompt_for_artist_with_no_qualifying_releases() -> None:
         ),
         patch(
             "spotify_playlist_creator.classify_releases",
+            return_value=[],
+        ),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
             return_value=[],
         ),
         patch(
@@ -327,6 +347,10 @@ def test_run_skips_prompt_for_artist_with_no_releases_at_all() -> None:
             "spotify_playlist_creator.classify_releases",
             return_value=[],
         ) as mock_classify,
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[],
+        ),
         patch(
             "spotify_playlist_creator.create_album_playlists",
             return_value=[],
@@ -368,6 +392,10 @@ def test_run_fetches_existing_playlists_once_regardless_of_artist_count() -> Non
             return_value=[],
         ),
         patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[],
+        ),
+        patch(
             "spotify_playlist_creator.create_album_playlists",
             return_value=[],
         ),
@@ -379,7 +407,6 @@ def test_run_fetches_existing_playlists_once_regardless_of_artist_count() -> Non
 
 
 def test_run_forwards_token_to_fetch_artist_releases_classify_and_create() -> None:
-    # Also covers spec scenario: "empty existing playlists → create_album_playlists receives {}"
     with (
         patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
         patch(
@@ -403,6 +430,10 @@ def test_run_forwards_token_to_fetch_artist_releases_classify_and_create() -> No
             return_value=[_ALBUM_A1],
         ) as mock_classify,
         patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[],
+        ) as mock_find_missing,
+        patch(
             "spotify_playlist_creator.create_album_playlists",
             return_value=[],
         ) as mock_create,
@@ -412,7 +443,8 @@ def test_run_forwards_token_to_fetch_artist_releases_classify_and_create() -> No
 
     mock_releases.assert_called_once_with(_TOKEN, "artist_a")
     mock_classify.assert_called_once_with(_TOKEN, _RAW_A)
-    mock_create.assert_called_once_with(_TOKEN, [_ALBUM_A1], _EXISTING_EMPTY)
+    mock_find_missing.assert_called_once_with(_TOKEN, [_ALBUM_A1], _EXISTING_EMPTY)
+    mock_create.assert_called_once_with(_TOKEN, [])
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +463,7 @@ def test_run_applies_artist_limit() -> None:
             "spotify_playlist_creator.fetch_artist_releases", return_value=[]
         ) as mock_releases,
         patch("spotify_playlist_creator.classify_releases", return_value=[]),
+        patch("spotify_playlist_creator.find_missing_album_playlists", return_value=[]),
         patch("spotify_playlist_creator.create_album_playlists", return_value=[]),
         patch("spotify_playlist_creator.prompt_for_folder"),
     ):
@@ -452,6 +485,7 @@ def test_run_with_no_limit_processes_all_artists() -> None:
             "spotify_playlist_creator.fetch_artist_releases", return_value=[]
         ) as mock_releases,
         patch("spotify_playlist_creator.classify_releases", return_value=[]),
+        patch("spotify_playlist_creator.find_missing_album_playlists", return_value=[]),
         patch("spotify_playlist_creator.create_album_playlists", return_value=[]),
         patch("spotify_playlist_creator.prompt_for_folder"),
     ):
@@ -471,9 +505,150 @@ def test_run_with_limit_exceeding_artist_count_processes_all() -> None:
             "spotify_playlist_creator.fetch_artist_releases", return_value=[]
         ) as mock_releases,
         patch("spotify_playlist_creator.classify_releases", return_value=[]),
+        patch("spotify_playlist_creator.find_missing_album_playlists", return_value=[]),
         patch("spotify_playlist_creator.create_album_playlists", return_value=[]),
         patch("spotify_playlist_creator.prompt_for_folder"),
     ):
         run(limit=10)
 
     assert mock_releases.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Dry Sync mode — tasks 3.1–3.3
+# ---------------------------------------------------------------------------
+
+
+def test_run_dry_run_calls_find_missing_but_not_create() -> None:
+    # Adversarial: artist has albums so create would be called in normal mode
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch(
+            "spotify_playlist_creator.fetch_saved_albums",
+            return_value=[_SAVED_A],
+        ),
+        patch(
+            "spotify_playlist_creator.derive_artists",
+            return_value=[_ARTIST_A],
+        ),
+        patch(
+            "spotify_playlist_creator.fetch_user_playlists",
+            return_value=_EXISTING_EMPTY,
+        ),
+        patch(
+            "spotify_playlist_creator.fetch_artist_releases",
+            return_value=_RAW_A,
+        ),
+        patch(
+            "spotify_playlist_creator.classify_releases",
+            return_value=[_ALBUM_A1, _ALBUM_A2],
+        ),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[_ALBUM_A1],
+        ) as mock_find_missing,
+        patch(
+            "spotify_playlist_creator.create_album_playlists",
+        ) as mock_create,
+        patch("spotify_playlist_creator.report_dry_sync_artist"),
+    ):
+        run(dry_run=True)
+
+    mock_find_missing.assert_called_once()
+    mock_create.assert_not_called()
+
+
+def test_run_dry_run_calls_report_for_every_artist_including_up_to_date() -> None:
+    # Adversarial: one artist has new albums, one is already up to date;
+    # both must get a report_dry_sync_artist call
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch(
+            "spotify_playlist_creator.fetch_saved_albums",
+            return_value=[_SAVED_A, _SAVED_B],
+        ),
+        patch(
+            "spotify_playlist_creator.derive_artists",
+            return_value=[_ARTIST_A, _ARTIST_B],
+        ),
+        patch(
+            "spotify_playlist_creator.fetch_user_playlists",
+            return_value=_EXISTING_EMPTY,
+        ),
+        patch(
+            "spotify_playlist_creator.fetch_artist_releases",
+            side_effect=lambda tok, artist_id: (
+                _RAW_A if artist_id == "artist_a" else _RAW_B
+            ),
+        ),
+        patch(
+            "spotify_playlist_creator.classify_releases",
+            side_effect=lambda tok, releases: (
+                [_ALBUM_A1, _ALBUM_A2] if releases == _RAW_A else [_ALBUM_B1]
+            ),
+        ),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            side_effect=lambda tok, albums, existing: (
+                [_ALBUM_A1] if albums == [_ALBUM_A1, _ALBUM_A2] else []
+            ),
+        ),
+        patch(
+            "spotify_playlist_creator.report_dry_sync_artist",
+        ) as mock_report,
+    ):
+        run(dry_run=True)
+
+    assert mock_report.call_count == 2
+    mock_report.assert_any_call("Artist A", [_ALBUM_A1])
+    mock_report.assert_any_call("Artist B", [])
+
+
+def test_run_normal_mode_behaviour_unchanged() -> None:
+    # dry_run=False (default): calls both plan and execute steps,
+    # prompt_for_folder only for artists with new playlists, never report
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch(
+            "spotify_playlist_creator.fetch_saved_albums",
+            return_value=[_SAVED_A, _SAVED_B],
+        ),
+        patch(
+            "spotify_playlist_creator.derive_artists",
+            return_value=[_ARTIST_A, _ARTIST_B],
+        ),
+        patch(
+            "spotify_playlist_creator.fetch_user_playlists",
+            return_value=_EXISTING_EMPTY,
+        ),
+        patch(
+            "spotify_playlist_creator.fetch_artist_releases",
+            side_effect=lambda tok, artist_id: (
+                _RAW_A if artist_id == "artist_a" else _RAW_B
+            ),
+        ),
+        patch(
+            "spotify_playlist_creator.classify_releases",
+            side_effect=lambda tok, releases: (
+                [_ALBUM_A1, _ALBUM_A2] if releases == _RAW_A else [_ALBUM_B1]
+            ),
+        ),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            side_effect=lambda tok, albums, existing: albums,
+        ) as mock_find_missing,
+        patch(
+            "spotify_playlist_creator.create_album_playlists",
+            side_effect=lambda tok, albums: (
+                [_CREATED_A1, _CREATED_A2] if albums == [_ALBUM_A1, _ALBUM_A2] else []
+            ),
+        ) as mock_create,
+        patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
+        patch("spotify_playlist_creator.report_dry_sync_artist") as mock_report,
+    ):
+        run(dry_run=False)
+
+    assert mock_find_missing.call_count == 2
+    assert mock_create.call_count == 2
+    mock_prompt.assert_called_once_with("Artist A", [_CREATED_A1, _CREATED_A2])
+    mock_report.assert_not_called()
