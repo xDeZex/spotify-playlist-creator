@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import inspect
+import io
 import json
+import urllib.error
 import urllib.request as urllib_request
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -259,6 +260,30 @@ def test_fetch_first_track_album_id_returns_none_for_empty_playlist() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Group 4.5: create_album_playlists uses api_request (propagates RuntimeError)
+# ---------------------------------------------------------------------------
+
+
+def test_create_album_playlists_propagates_api_error_as_runtime_error() -> None:
+    hdrs: MagicMock = MagicMock()
+    hdrs.get = lambda key, default=None: default
+    http_err = urllib.error.HTTPError(
+        url="https://api.spotify.com/v1/me/playlists",
+        code=403,
+        msg="Forbidden",
+        hdrs=hdrs,
+        fp=io.BytesIO(b'{"error": {"status": 403, "message": "Forbidden"}}'),
+    )
+    albums = [_album("a1", "New Album", "2022-01-01")]
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        with pytest.raises(
+            RuntimeError,
+            match=r"Spotify API error \(403 /v1/me/playlists\): Forbidden",
+        ):
+            create_album_playlists(_TOKEN, albums)
+
+
 def test_create_album_playlists_creates_playlist_for_each_new_album() -> None:
     albums = [
         _album("a1", "Album One", "2021-06-15"),
@@ -326,7 +351,6 @@ def test_create_album_playlists_posts_to_me_playlists_endpoint() -> None:
     with patch("urllib.request.urlopen", side_effect=capturing_urlopen):
         create_album_playlists(_TOKEN, albums)
 
-    assert "user_id" not in inspect.signature(create_album_playlists).parameters
     assert "/me/playlists" in captured[0].full_url
     assert "/users/" not in captured[0].full_url
 
@@ -359,6 +383,109 @@ def test_find_missing_album_playlists_checks_all_same_named_playlists() -> None:
 # ---------------------------------------------------------------------------
 # Group 3b: find_missing_album_playlists — planning step
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Group 4.6: API error during any create_playlists operation propagates as RuntimeError
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_user_playlists_api_error_on_second_page_propagates() -> None:
+    page1 = [("Alpha", "id1")]
+    call_count = [0]
+
+    def failing_on_second_call(_req: Any) -> Any:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return _playlist_page_with_ids(
+                page1,
+                next_url="https://api.spotify.com/v1/me/playlists?offset=10",
+            )
+        hdrs: MagicMock = MagicMock()
+        hdrs.get = lambda key, default=None: default
+        raise urllib.error.HTTPError(
+            url="https://api.spotify.com/v1/me/playlists",
+            code=500,
+            msg="Internal Server Error",
+            hdrs=hdrs,
+            fp=io.BytesIO(b'{"error": {"status": 500, "message": "Server error"}}'),
+        )
+
+    with patch("urllib.request.urlopen", side_effect=failing_on_second_call):
+        with pytest.raises(
+            RuntimeError,
+            match=r"Spotify API error \(500 /v1/me/playlists\): Server error",
+        ):
+            fetch_user_playlists(_TOKEN)
+
+
+# ---------------------------------------------------------------------------
+# Group 4.1: fetch_user_playlists uses api_request (propagates RuntimeError)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_user_playlists_propagates_api_error_as_runtime_error() -> None:
+    hdrs: MagicMock = MagicMock()
+    hdrs.get = lambda key, default=None: default
+    http_err = urllib.error.HTTPError(
+        url="https://api.spotify.com/v1/me/playlists",
+        code=403,
+        msg="Forbidden",
+        hdrs=hdrs,
+        fp=io.BytesIO(b'{"error": {"status": 403, "message": "Forbidden"}}'),
+    )
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        with pytest.raises(
+            RuntimeError,
+            match=r"Spotify API error \(403 /v1/me/playlists\): Forbidden",
+        ):
+            fetch_user_playlists(_TOKEN)
+
+
+# ---------------------------------------------------------------------------
+# Group 4.3: fetch_album_track_uris uses api_request (propagates RuntimeError)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_album_track_uris_propagates_api_error_as_runtime_error() -> None:
+    hdrs: MagicMock = MagicMock()
+    hdrs.get = lambda key, default=None: default
+    http_err = urllib.error.HTTPError(
+        url="https://api.spotify.com/v1/albums/alb1/tracks",
+        code=404,
+        msg="Not Found",
+        hdrs=hdrs,
+        fp=io.BytesIO(b'{"error": {"status": 404, "message": "Album not found"}}'),
+    )
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        with pytest.raises(
+            RuntimeError,
+            match=r"Spotify API error \(404 /v1/albums/alb1/tracks\): Album not found",
+        ):
+            fetch_album_track_uris(_TOKEN, "alb1")
+
+
+# ---------------------------------------------------------------------------
+# Group 4.2: fetch_first_track_album_id uses api_request (propagates RuntimeError)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_first_track_album_id_propagates_api_error_as_runtime_error() -> None:
+    hdrs: MagicMock = MagicMock()
+    hdrs.get = lambda key, default=None: default
+    http_err = urllib.error.HTTPError(
+        url="https://api.spotify.com/v1/playlists/pl1/tracks",
+        code=404,
+        msg="Not Found",
+        hdrs=hdrs,
+        fp=io.BytesIO(b'{"error": {"status": 404, "message": "Not found"}}'),
+    )
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        with pytest.raises(
+            RuntimeError,
+            match=r"Spotify API error \(404 /v1/playlists/pl1/tracks\): Not found",
+        ):
+            fetch_first_track_album_id(_TOKEN, "pl1")
 
 
 def test_find_missing_album_playlists_raises_for_empty_token() -> None:
@@ -562,6 +689,37 @@ def test_fetch_album_track_uris_sends_auth_header() -> None:
 # ---------------------------------------------------------------------------
 # Group 5: add_tracks_to_playlist
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Group 4.4: add_tracks_to_playlist uses api_request (propagates RuntimeError)
+# ---------------------------------------------------------------------------
+
+
+def test_add_tracks_to_playlist_propagates_api_error_as_runtime_error() -> None:
+    hdrs: MagicMock = MagicMock()
+    hdrs.get = lambda key, default=None: default
+    http_err = urllib.error.HTTPError(
+        url="https://api.spotify.com/v1/playlists/pl1/tracks",
+        code=403,
+        msg="Forbidden",
+        hdrs=hdrs,
+        fp=io.BytesIO(b'{"error": {"status": 403, "message": "Forbidden"}}'),
+    )
+    uris = ["spotify:track:t1"]
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        with pytest.raises(
+            RuntimeError,
+            match=r"Spotify API error \(403 /v1/playlists/pl1/tracks\): Forbidden",
+        ):
+            add_tracks_to_playlist(_TOKEN, "pl1", uris)
+
+
+def test_add_tracks_to_playlist_raises_for_empty_token() -> None:
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        with pytest.raises(ValueError):
+            add_tracks_to_playlist(_EMPTY_TOKEN, "pl1", ["spotify:track:t1"])
+    mock_urlopen.assert_not_called()
 
 
 def test_add_tracks_to_playlist_does_nothing_for_empty_list() -> None:

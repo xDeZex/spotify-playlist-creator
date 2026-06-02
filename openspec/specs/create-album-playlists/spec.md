@@ -1,5 +1,3 @@
-## MODIFIED Requirements
-
 ### Requirement: Create missing Album Playlists for an artist
 For a given artist and their list of Albums, the system SHALL identify which Albums do not already have a matching playlist in the user's library, and return them as a `list[Album]`. An Album has a matching playlist when a same-named playlist exists in the user's library whose first track belongs to that Album (determined by comparing the track's Spotify Album ID with the Album's ID). When multiple playlists share the same name, each is checked; if any matches, the Album is excluded from the result. An empty same-named playlist (no tracks) SHALL be treated as a non-match — the Album is included in the result. The returned list SHALL be sorted in descending release-date order (newest first). Already-matched playlists SHALL be left untouched.
 
@@ -35,8 +33,6 @@ For a given artist and their list of Albums, the system SHALL identify which Alb
 - **WHEN** a same-named playlist is found for an Album
 - **THEN** the system fetches the first track of that playlist using `GET /playlists/{id}/tracks?limit=1` and reads the track's `album.id` field to determine the match
 
-## ADDED Requirements
-
 ### Requirement: Execute step creates and populates playlists for pre-identified missing albums
 Given a list of Albums already identified as missing (output of the planning step), the system SHALL create a Spotify playlist for each Album, populate it with all tracks from that Album, and return a `list[CreatedPlaylist]` in the order albums were processed. The playlist name SHALL match the Album name exactly as returned by Spotify. Track order SHALL match the order returned by Spotify. When an album has more than 100 tracks, tracks SHALL be added in batches of 100, in order.
 
@@ -59,3 +55,18 @@ Given a list of Albums already identified as missing (output of the planning ste
 #### Scenario: Playlist creation API call
 - **WHEN** the execute step creates a playlist
 - **THEN** it calls `POST /me/playlists` with the album name and `public: true`
+
+### Requirement: API errors propagate as structured RuntimeError
+All HTTP calls within `create_playlists.py` SHALL be made via `api_request`. Errors from the Spotify API SHALL surface as `RuntimeError` with a structured message (see `api-request` spec) and propagate to the caller without wrapping or swallowing.
+
+#### Scenario: API error during playlist fetch
+- **WHEN** the Spotify API returns an error while fetching existing playlists
+- **THEN** a `RuntimeError` with a structured message is raised and propagated
+
+#### Scenario: API error during playlist creation
+- **WHEN** the Spotify API returns an error while creating a playlist
+- **THEN** a `RuntimeError` with a structured message is raised and propagated
+
+#### Scenario: API error during track fetch or add
+- **WHEN** the Spotify API returns an error while fetching album tracks or adding tracks to a playlist
+- **THEN** a `RuntimeError` with a structured message is raised and propagated

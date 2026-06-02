@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
+import urllib.error
 import urllib.request
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -187,3 +189,60 @@ def test_fetch_artist_releases_multi_page() -> None:
     assert len(captured) == 2
     for req in captured:
         assert req.get_header("Authorization") == "Bearer test_access_token"
+
+
+# ---------------------------------------------------------------------------
+# Group 3.1: fetch_artist_releases uses api_request (propagates RuntimeError)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_artist_releases_propagates_api_error_as_runtime_error() -> None:
+    hdrs: MagicMock = MagicMock()
+    hdrs.get = lambda key, default=None: default
+    http_err = urllib.error.HTTPError(
+        url="https://api.spotify.com/v1/artists/a1/albums",
+        code=401,
+        msg="Unauthorized",
+        hdrs=hdrs,
+        fp=io.BytesIO(b'{"error": {"status": 401, "message": "No token provided"}}'),
+    )
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        with pytest.raises(
+            RuntimeError,
+            match=r"Spotify API error \(401 /v1/artists/a1/albums\): No token provided",
+        ):
+            fetch_artist_releases(_VALID_TOKEN, "a1")
+
+
+# ---------------------------------------------------------------------------
+# Group 3.2: API error during artist releases fetch propagates as RuntimeError
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_artist_releases_api_error_on_second_page_propagates() -> None:
+    page1 = [_release_item("alb1", "Album One", "album", "2019-01-01")]
+    call_count = [0]
+
+    def failing_on_second_call(_req: Any) -> Any:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return _make_response(
+                page1,
+                next_url="https://api.spotify.com/v1/artists/a1/albums?offset=10",
+            )
+        hdrs: MagicMock = MagicMock()
+        hdrs.get = lambda key, default=None: default
+        raise urllib.error.HTTPError(
+            url="https://api.spotify.com/v1/artists/a1/albums",
+            code=500,
+            msg="Internal Server Error",
+            hdrs=hdrs,
+            fp=io.BytesIO(b'{"error": {"status": 500, "message": "Server error"}}'),
+        )
+
+    with patch("urllib.request.urlopen", side_effect=failing_on_second_call):
+        with pytest.raises(
+            RuntimeError,
+            match=r"Spotify API error \(500 /v1/artists/a1/albums\): Server error",
+        ):
+            fetch_artist_releases(_VALID_TOKEN, "a1")

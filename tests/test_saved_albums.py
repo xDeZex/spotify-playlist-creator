@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import io
 import json
+import urllib.error
 import urllib.request
 from datetime import datetime
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -209,3 +211,59 @@ def test_fetch_saved_albums_added_at_with_milliseconds() -> None:
     with patch("urllib.request.urlopen", return_value=_make_response(items)):
         result = fetch_saved_albums(_VALID_TOKEN)
     assert result[0].added_at == datetime(2024, 3, 15, 10, 30, 0)
+
+
+# ---------------------------------------------------------------------------
+# Group 2.1: fetch_saved_albums uses api_request (propagates RuntimeError)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_saved_albums_propagates_api_error_as_runtime_error() -> None:
+    hdrs: MagicMock = MagicMock()
+    hdrs.get = lambda key, default=None: default
+    http_err = urllib.error.HTTPError(
+        url="https://api.spotify.com/v1/me/albums",
+        code=403,
+        msg="Forbidden",
+        hdrs=hdrs,
+        fp=io.BytesIO(
+            b'{"error": {"status": 403, "message": "Insufficient client scope"}}'
+        ),
+    )
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        with pytest.raises(
+            RuntimeError,
+            match=r"Spotify API error \(403 /v1/me/albums\): Insufficient client scope",
+        ):
+            fetch_saved_albums(_VALID_TOKEN)
+
+
+# ---------------------------------------------------------------------------
+# Group 2.2: API error during saved albums fetch propagates as RuntimeError
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_saved_albums_api_error_on_second_page_propagates() -> None:
+    page1_items = [_album_item("id1", "Album One", ["Artist A"])]
+    call_count = [0]
+
+    def failing_on_second_call(_req: Any) -> Any:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return _make_response(
+                page1_items,
+                next_url="https://api.spotify.com/v1/me/albums?offset=10",
+            )
+        hdrs: MagicMock = MagicMock()
+        hdrs.get = lambda key, default=None: default
+        raise urllib.error.HTTPError(
+            url="https://api.spotify.com/v1/me/albums",
+            code=500,
+            msg="Internal Server Error",
+            hdrs=hdrs,
+            fp=io.BytesIO(b'{"error": {"status": 500, "message": "Server error"}}'),
+        )
+
+    with patch("urllib.request.urlopen", side_effect=failing_on_second_call):
+        with pytest.raises(RuntimeError, match="Spotify API error"):
+            fetch_saved_albums(_VALID_TOKEN)

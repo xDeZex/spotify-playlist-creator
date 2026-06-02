@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
-import urllib.request
 from typing import Any
 
+from spotify_playlist_creator.api import api_request
 from spotify_playlist_creator.auth import SpotifyToken
 from spotify_playlist_creator.models import RawRelease
 
@@ -16,16 +15,12 @@ def fetch_artist_releases(token: SpotifyToken, artist_id: str) -> list[RawReleas
 
     results: list[RawRelease] = []
     url: str | None = (
-        f"{_ARTIST_ALBUMS_URL.format(artist_id=artist_id)}?include_groups=album,single&limit=50"
+        f"{_ARTIST_ALBUMS_URL.format(artist_id=artist_id)}"
+        f"?include_groups=album,single&limit=10"
     )
 
     while url is not None:
-        req = urllib.request.Request(
-            url,
-            headers={"Authorization": f"Bearer {token.access_token}"},
-        )
-        with urllib.request.urlopen(req) as response:
-            body: dict[str, Any] = json.loads(response.read())
+        body: dict[str, Any] = api_request(url, token)
 
         for item in body.get("items", []):
             results.append(
