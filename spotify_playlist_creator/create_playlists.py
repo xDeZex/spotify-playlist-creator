@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import dataclasses
-import json
-import urllib.request
 from typing import Any
 
+from spotify_playlist_creator.api import api_request
 from spotify_playlist_creator.auth import SpotifyToken
 from spotify_playlist_creator.models import Album
 
@@ -22,15 +21,10 @@ def fetch_user_playlists(token: SpotifyToken) -> dict[str, list[str]]:
         raise ValueError("No valid token provided")
 
     result: dict[str, list[str]] = {}
-    url: str | None = f"{_API_BASE}/me/playlists?limit=50"
+    url: str | None = f"{_API_BASE}/me/playlists?limit=10"
 
     while url is not None:
-        req = urllib.request.Request(
-            url,
-            headers={"Authorization": f"Bearer {token.access_token}"},
-        )
-        with urllib.request.urlopen(req) as response:
-            body: dict[str, Any] = json.loads(response.read())
+        body: dict[str, Any] = api_request(url, token)
 
         for item in body.get("items", []):
             name = str(item["name"])
@@ -46,13 +40,9 @@ def fetch_first_track_album_id(token: SpotifyToken, playlist_id: str) -> str | N
     if not token.access_token:
         raise ValueError("No valid token provided")
 
-    req = urllib.request.Request(
-        f"{_API_BASE}/playlists/{playlist_id}/tracks?limit=1",
-        headers={"Authorization": f"Bearer {token.access_token}"},
+    body: dict[str, Any] = api_request(
+        f"{_API_BASE}/playlists/{playlist_id}/tracks?limit=1", token
     )
-    with urllib.request.urlopen(req) as response:
-        body: dict[str, Any] = json.loads(response.read())
-
     items = body.get("items", [])
     if not items:
         return None
@@ -64,15 +54,10 @@ def fetch_album_track_uris(token: SpotifyToken, album_id: str) -> list[str]:
         raise ValueError("No valid token provided")
 
     uris: list[str] = []
-    url: str | None = f"{_API_BASE}/albums/{album_id}/tracks?limit=50"
+    url: str | None = f"{_API_BASE}/albums/{album_id}/tracks?limit=10"
 
     while url is not None:
-        req = urllib.request.Request(
-            url,
-            headers={"Authorization": f"Bearer {token.access_token}"},
-        )
-        with urllib.request.urlopen(req) as response:
-            body: dict[str, Any] = json.loads(response.read())
+        body: dict[str, Any] = api_request(url, token)
 
         for item in body.get("items", []):
             uris.append(str(item["uri"]))
@@ -85,19 +70,15 @@ def fetch_album_track_uris(token: SpotifyToken, album_id: str) -> list[str]:
 def add_tracks_to_playlist(
     token: SpotifyToken, playlist_id: str, uris: list[str]
 ) -> None:
+    if not token.access_token:
+        raise ValueError("No valid token provided")
     for i in range(0, len(uris), 100):
         batch = uris[i : i + 100]
-        data = json.dumps({"uris": batch}).encode()
-        req = urllib.request.Request(
+        api_request(
             f"{_API_BASE}/playlists/{playlist_id}/tracks",
-            data=data,
-            headers={
-                "Authorization": f"Bearer {token.access_token}",
-                "Content-Type": "application/json",
-            },
+            token,
+            body={"uris": batch},
         )
-        with urllib.request.urlopen(req) as response:
-            response.read()
 
 
 def find_missing_album_playlists(
@@ -125,18 +106,11 @@ def create_album_playlists(
 ) -> list[CreatedPlaylist]:
     created: list[CreatedPlaylist] = []
     for album in new_albums:
-        data = json.dumps({"name": album.name, "public": True}).encode()
-        req = urllib.request.Request(
+        body: dict[str, Any] = api_request(
             f"{_API_BASE}/me/playlists",
-            data=data,
-            headers={
-                "Authorization": f"Bearer {token.access_token}",
-                "Content-Type": "application/json",
-            },
+            token,
+            body={"name": album.name, "public": True},
         )
-        with urllib.request.urlopen(req) as response:
-            body: dict[str, Any] = json.loads(response.read())
-
         playlist_id = str(body["id"])
         uris = fetch_album_track_uris(token, album.id)
         if uris:

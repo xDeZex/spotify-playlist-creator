@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
-import urllib.request
 from datetime import datetime
 from typing import Any
 
+from spotify_playlist_creator.api import api_request
 from spotify_playlist_creator.auth import SpotifyToken
 from spotify_playlist_creator.models import Artist, SavedAlbum
 
@@ -16,15 +15,10 @@ def fetch_saved_albums(token: SpotifyToken) -> list[SavedAlbum]:
         raise ValueError("No valid token provided")
 
     results: list[SavedAlbum] = []
-    url: str | None = f"{_SAVED_ALBUMS_URL}?limit=50"
+    url: str | None = f"{_SAVED_ALBUMS_URL}?limit=10"
 
     while url is not None:
-        req = urllib.request.Request(
-            url,
-            headers={"Authorization": f"Bearer {token.access_token}"},
-        )
-        with urllib.request.urlopen(req) as response:
-            body: dict[str, Any] = json.loads(response.read())
+        body: dict[str, Any] = api_request(url, token)
 
         for item in body.get("items", []):
             album = item["album"]

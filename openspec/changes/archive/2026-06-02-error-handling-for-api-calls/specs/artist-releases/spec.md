@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: Fetch artist releases from Spotify
 The system SHALL fetch all albums and singles for a given artist by calling `GET /artists/{id}/albums` with `include_groups=album,single` via `api_request`. Both album types are fetched because Spotify classifies EPs as `single`; downstream classification determines which are true Releases. Errors from the Spotify API surface as `RuntimeError` with a structured message (see `api-request` spec).
 
@@ -24,20 +26,3 @@ The system SHALL fetch all albums and singles for a given artist by calling `GET
 #### Scenario: API returns an error
 - **WHEN** the Spotify API returns a 4xx or 5xx response
 - **THEN** a `RuntimeError` with a structured message is raised and propagated to the caller
-
-### Requirement: RawRelease model
-The system SHALL represent each item returned by the artist albums endpoint as a `RawRelease` dataclass with the following fields: `id` (Spotify album ID), `name` (display name), `album_type` (Spotify's classification: `"album"`, `"single"`, or `"compilation"`), `release_date` (partial ISO string as returned by Spotify: `"YYYY"`, `"YYYY-MM"`, or `"YYYY-MM-DD"`).
-
-Note: `total_tracks` is intentionally excluded. Although the Spotify albums endpoint returns it, classification uses the actual track count from the tracks endpoint (`len(durations)`) rather than this metadata field. Carrying it on `RawRelease` would be speculative — no current logic reads it.
-
-#### Scenario: Fields mapped from API response
-- **WHEN** the API returns an album object
-- **THEN** each field on `RawRelease` is populated directly from the corresponding API field with no transformation
-
-#### Scenario: Release date preserved as string
-- **WHEN** the API returns a year-only release date such as `"1997"`
-- **THEN** `release_date` is stored as `"1997"` without padding or conversion
-
-#### Scenario: Lexicographic sort order
-- **WHEN** a list of `RawRelease` objects is sorted by `release_date`
-- **THEN** releases appear in chronological order (year-only dates sort before more specific dates in the same year)
