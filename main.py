@@ -1,5 +1,7 @@
 import argparse
 
+from dotenv import load_dotenv
+
 from spotify_playlist_creator import run
 
 
@@ -11,6 +13,7 @@ def _positive_int(value: str) -> int:
 
 
 def main() -> None:
+    load_dotenv()
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=_positive_int, default=None)
     parser.add_argument("--dry-run", action="store_true", default=False)
