@@ -10,6 +10,8 @@ A script that reads a user's Saved Albums and organizes them inside Spotify — 
 
 Never `git push` unless explicitly told to.
 
+After every commit, run `git status` and check for leftover uncommitted changes. If any exist, warn the user and ask whether they should be included before proceeding.
+
 When starting brand-new work — a new OpenSpec change or any fresh implementation — create a new branch with a fitting name (`git checkout -b <name>`), then run `git fetch origin && git rebase origin/main` to ensure it is up to date with main. For continuing work on an existing branch, just rebase.
 
 ### Commit and review workflow
