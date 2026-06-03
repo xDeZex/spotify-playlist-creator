@@ -3,7 +3,7 @@ from spotify_playlist_creator.auth import SpotifyToken, authenticate
 from spotify_playlist_creator.classify_releases import classify_releases
 from spotify_playlist_creator.create_playlists import (
     create_album_playlists,
-    fetch_user_playlists,
+    fetch_owned_playlists,
     find_missing_album_playlists,
 )
 from spotify_playlist_creator.dry_sync import report_dry_sync_artist
@@ -26,7 +26,7 @@ def run(limit: int | None = None, dry_run: bool = False) -> None:
     token: SpotifyToken = authenticate()
     saved_albums = fetch_saved_albums(token)
     artists = derive_artists(saved_albums)[:limit]
-    existing_playlists = fetch_user_playlists(token)
+    existing_playlists = fetch_owned_playlists(token)
     for artist in artists:
         raw_releases = fetch_artist_releases(token, artist.id)
         albums = classify_releases(token, raw_releases)

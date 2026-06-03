@@ -80,7 +80,7 @@ def test_run_calls_authenticate_exactly_once() -> None:
         ) as mock_auth,
         patch("spotify_playlist_creator.fetch_saved_albums", return_value=[]),
         patch("spotify_playlist_creator.derive_artists", return_value=[]),
-        patch("spotify_playlist_creator.fetch_user_playlists", return_value={}),
+        patch("spotify_playlist_creator.fetch_owned_playlists", return_value={}),
     ):
         run()
 
@@ -94,7 +94,7 @@ def test_run_forwards_token_to_fetch_saved_albums() -> None:
             "spotify_playlist_creator.fetch_saved_albums", return_value=[]
         ) as mock_fetch,
         patch("spotify_playlist_creator.derive_artists", return_value=[]),
-        patch("spotify_playlist_creator.fetch_user_playlists", return_value={}),
+        patch("spotify_playlist_creator.fetch_owned_playlists", return_value={}),
     ):
         run()
 
@@ -118,7 +118,7 @@ def test_run_calls_prompt_for_folder_for_each_artist_with_new_playlists() -> Non
             return_value=[_ARTIST_A, _ARTIST_B],
         ),
         patch(
-            "spotify_playlist_creator.fetch_user_playlists",
+            "spotify_playlist_creator.fetch_owned_playlists",
             return_value=_EXISTING_EMPTY,
         ),
         patch(
@@ -171,7 +171,7 @@ def test_run_does_not_call_prompt_when_no_new_playlists() -> None:
             return_value=[_ARTIST_A],
         ),
         patch(
-            "spotify_playlist_creator.fetch_user_playlists",
+            "spotify_playlist_creator.fetch_owned_playlists",
             return_value={"Album A1": ["pid1"], "Album A2": ["pid2"]},
         ),
         patch(
@@ -214,7 +214,7 @@ def test_run_calls_prompt_only_for_artists_with_new_playlists() -> None:
             return_value=[_ARTIST_A, _ARTIST_B],
         ),
         patch(
-            "spotify_playlist_creator.fetch_user_playlists",
+            "spotify_playlist_creator.fetch_owned_playlists",
             return_value=_EXISTING_EMPTY,
         ),
         patch(
@@ -260,7 +260,7 @@ def test_run_does_nothing_when_no_saved_albums() -> None:
             "spotify_playlist_creator.derive_artists", return_value=[]
         ) as mock_derive,
         patch(
-            "spotify_playlist_creator.fetch_user_playlists",
+            "spotify_playlist_creator.fetch_owned_playlists",
             return_value=_EXISTING_EMPTY,
         ),
         patch("spotify_playlist_creator.fetch_artist_releases") as mock_releases,
@@ -298,7 +298,7 @@ def test_run_skips_prompt_for_artist_with_no_qualifying_releases() -> None:
             return_value=[_ARTIST_A],
         ),
         patch(
-            "spotify_playlist_creator.fetch_user_playlists",
+            "spotify_playlist_creator.fetch_owned_playlists",
             return_value=_EXISTING_EMPTY,
         ),
         patch(
@@ -336,7 +336,7 @@ def test_run_skips_prompt_for_artist_with_no_releases_at_all() -> None:
             return_value=[_ARTIST_A],
         ),
         patch(
-            "spotify_playlist_creator.fetch_user_playlists",
+            "spotify_playlist_creator.fetch_owned_playlists",
             return_value=_EXISTING_EMPTY,
         ),
         patch(
@@ -380,7 +380,7 @@ def test_run_fetches_existing_playlists_once_regardless_of_artist_count() -> Non
             return_value=[_ARTIST_A, _ARTIST_B],
         ),
         patch(
-            "spotify_playlist_creator.fetch_user_playlists",
+            "spotify_playlist_creator.fetch_owned_playlists",
             return_value=_EXISTING_EMPTY,
         ) as mock_fetch_playlists,
         patch(
@@ -418,7 +418,7 @@ def test_run_forwards_token_to_fetch_artist_releases_classify_and_create() -> No
             return_value=[_ARTIST_A],
         ),
         patch(
-            "spotify_playlist_creator.fetch_user_playlists",
+            "spotify_playlist_creator.fetch_owned_playlists",
             return_value=_EXISTING_EMPTY,
         ),
         patch(
@@ -458,7 +458,7 @@ def test_run_applies_artist_limit() -> None:
         patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
         patch("spotify_playlist_creator.fetch_saved_albums", return_value=[]),
         patch("spotify_playlist_creator.derive_artists", return_value=five_artists),
-        patch("spotify_playlist_creator.fetch_user_playlists", return_value={}),
+        patch("spotify_playlist_creator.fetch_owned_playlists", return_value={}),
         patch(
             "spotify_playlist_creator.fetch_artist_releases", return_value=[]
         ) as mock_releases,
@@ -480,7 +480,7 @@ def test_run_with_no_limit_processes_all_artists() -> None:
         patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
         patch("spotify_playlist_creator.fetch_saved_albums", return_value=[]),
         patch("spotify_playlist_creator.derive_artists", return_value=three_artists),
-        patch("spotify_playlist_creator.fetch_user_playlists", return_value={}),
+        patch("spotify_playlist_creator.fetch_owned_playlists", return_value={}),
         patch(
             "spotify_playlist_creator.fetch_artist_releases", return_value=[]
         ) as mock_releases,
@@ -500,7 +500,7 @@ def test_run_with_limit_exceeding_artist_count_processes_all() -> None:
         patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
         patch("spotify_playlist_creator.fetch_saved_albums", return_value=[]),
         patch("spotify_playlist_creator.derive_artists", return_value=two_artists),
-        patch("spotify_playlist_creator.fetch_user_playlists", return_value={}),
+        patch("spotify_playlist_creator.fetch_owned_playlists", return_value={}),
         patch(
             "spotify_playlist_creator.fetch_artist_releases", return_value=[]
         ) as mock_releases,
@@ -532,7 +532,7 @@ def test_run_dry_run_calls_find_missing_but_not_create() -> None:
             return_value=[_ARTIST_A],
         ),
         patch(
-            "spotify_playlist_creator.fetch_user_playlists",
+            "spotify_playlist_creator.fetch_owned_playlists",
             return_value=_EXISTING_EMPTY,
         ),
         patch(
@@ -572,7 +572,7 @@ def test_run_dry_run_calls_report_for_every_artist_including_up_to_date() -> Non
             return_value=[_ARTIST_A, _ARTIST_B],
         ),
         patch(
-            "spotify_playlist_creator.fetch_user_playlists",
+            "spotify_playlist_creator.fetch_owned_playlists",
             return_value=_EXISTING_EMPTY,
         ),
         patch(
@@ -618,7 +618,7 @@ def test_run_normal_mode_behaviour_unchanged() -> None:
             return_value=[_ARTIST_A, _ARTIST_B],
         ),
         patch(
-            "spotify_playlist_creator.fetch_user_playlists",
+            "spotify_playlist_creator.fetch_owned_playlists",
             return_value=_EXISTING_EMPTY,
         ),
         patch(
