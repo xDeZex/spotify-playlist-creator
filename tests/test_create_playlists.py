@@ -4,6 +4,7 @@ import io
 import json
 import urllib.error
 import urllib.request as urllib_request
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -15,7 +16,7 @@ from spotify_playlist_creator.create_playlists import (
     create_album_playlists,
     fetch_album_track_uris,
     fetch_first_track_album_id,
-    fetch_user_playlists,
+    fetch_owned_playlists,
     find_missing_album_playlists,
 )
 from spotify_playlist_creator.models import Album
@@ -23,6 +24,8 @@ from spotify_playlist_creator.models import Album
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_ME_USER_ID = "user_id_123"
 
 _TOKEN = SpotifyToken(
     access_token="test_tok",
@@ -83,14 +86,33 @@ def _add_tracks_response() -> Any:
     return _Response()
 
 
+def _me_response(user_id: str = _ME_USER_ID) -> Any:
+    class _Response:
+        def read(self) -> bytes:
+            return json.dumps({"id": user_id}).encode()
+
+        def __enter__(self) -> _Response:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            pass
+
+    return _Response()
+
+
 def _playlist_page_with_ids(
-    entries: list[tuple[str, str]], next_url: str | None = None
+    entries: list[tuple[str, str]],
+    next_url: str | None = None,
+    owner_id: str = _ME_USER_ID,
 ) -> Any:
     class _Response:
         def read(self) -> bytes:
             return json.dumps(
                 {
-                    "items": [{"name": n, "id": pid} for n, pid in entries],
+                    "items": [
+                        {"name": n, "id": pid, "owner": {"id": owner_id}}
+                        for n, pid in entries
+                    ],
                     "next": next_url,
                 }
             ).encode()
@@ -102,6 +124,44 @@ def _playlist_page_with_ids(
             pass
 
     return _Response()
+
+
+def _playlist_page_items(
+    items: list[tuple[str, str, str]], next_url: str | None = None
+) -> Any:
+    """Variant for mixed-owner tests: items are (name, id, owner_id) tuples."""
+
+    class _Response:
+        def read(self) -> bytes:
+            return json.dumps(
+                {
+                    "items": [
+                        {"name": n, "id": pid, "owner": {"id": oid}}
+                        for n, pid, oid in items
+                    ],
+                    "next": next_url,
+                }
+            ).encode()
+
+        def __enter__(self) -> _Response:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            pass
+
+    return _Response()
+
+
+def _route(me_resp: Any, *pages: Any) -> Callable[[urllib_request.Request], Any]:
+    """Routes urlopen calls: non-playlist URLs get me_resp; playlist URLs get pages in order."""
+    page_iter = iter(pages)
+
+    def _side(req: urllib_request.Request) -> Any:
+        if "playlists" not in req.full_url:
+            return me_resp
+        return next(page_iter)
+
+    return _side
 
 
 def _first_track_response(album_id: str | None) -> Any:
@@ -134,65 +194,61 @@ def test_fetch_album_track_uris_raises_for_empty_token() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Group 1a: fetch_user_playlists — name-to-IDs map
+# Group 1a: fetch_owned_playlists — name-to-IDs map
 # ---------------------------------------------------------------------------
 
 
-def test_fetch_user_playlists_returns_name_to_ids_map() -> None:
+def test_fetch_owned_playlists_returns_name_to_ids_map() -> None:
     with patch(
         "urllib.request.urlopen",
-        return_value=_playlist_page_with_ids(
-            [("Alpha", "id1"), ("Beta", "id2"), ("Gamma", "id3")]
+        side_effect=_route(
+            _me_response(),
+            _playlist_page_with_ids(
+                [("Alpha", "id1"), ("Beta", "id2"), ("Gamma", "id3")]
+            ),
         ),
     ):
-        result = fetch_user_playlists(_TOKEN)
+        result = fetch_owned_playlists(_TOKEN)
 
     assert result == {"Alpha": ["id1"], "Beta": ["id2"], "Gamma": ["id3"]}
 
 
-def test_fetch_user_playlists_raises_for_empty_token() -> None:
+def test_fetch_owned_playlists_raises_for_empty_token() -> None:
     with patch("urllib.request.urlopen") as mock_urlopen:
         with pytest.raises(ValueError):
-            fetch_user_playlists(_EMPTY_TOKEN)
+            fetch_owned_playlists(_EMPTY_TOKEN)
     mock_urlopen.assert_not_called()
 
 
-def test_fetch_user_playlists_sends_auth_header() -> None:
-    captured: list[urllib_request.Request] = []
-
-    def capturing_urlopen(req: urllib_request.Request) -> Any:
-        captured.append(req)
-        return _playlist_page_with_ids([])
-
-    with patch("urllib.request.urlopen", side_effect=capturing_urlopen):
-        fetch_user_playlists(_TOKEN)
-
-    assert len(captured) == 1
-    assert captured[0].get_header("Authorization") == "Bearer test_tok"
-
-
-def test_fetch_user_playlists_returns_empty_for_no_playlists() -> None:
-    with patch("urllib.request.urlopen", return_value=_playlist_page_with_ids([])):
-        result = fetch_user_playlists(_TOKEN)
+def test_fetch_owned_playlists_returns_empty_for_no_playlists() -> None:
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=_route(_me_response(), _playlist_page_with_ids([])),
+    ):
+        result = fetch_owned_playlists(_TOKEN)
 
     assert result == {}
 
 
-def test_fetch_user_playlists_collects_duplicate_names_into_same_bucket() -> None:
+def test_fetch_owned_playlists_collects_duplicate_names_into_same_bucket() -> None:
     with patch(
         "urllib.request.urlopen",
-        return_value=_playlist_page_with_ids(
-            [("Self Titled", "pid1"), ("Other", "pid2"), ("Self Titled", "pid3")]
+        side_effect=_route(
+            _me_response(),
+            _playlist_page_with_ids(
+                [("Self Titled", "pid1"), ("Other", "pid2"), ("Self Titled", "pid3")]
+            ),
         ),
     ):
-        result = fetch_user_playlists(_TOKEN)
+        result = fetch_owned_playlists(_TOKEN)
 
     assert result["Self Titled"] == ["pid1", "pid3"]
     assert result["Other"] == ["pid2"]
 
 
-def test_fetch_user_playlists_follows_pagination() -> None:
+def test_fetch_owned_playlists_follows_pagination() -> None:
     responses = [
+        _me_response(),
         _playlist_page_with_ids(
             [("Alpha", "id1"), ("Beta", "id2")],
             next_url="https://api.spotify.com/v1/me/playlists?offset=50",
@@ -202,9 +258,91 @@ def test_fetch_user_playlists_follows_pagination() -> None:
     resp_iter = iter(responses)
 
     with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
-        result = fetch_user_playlists(_TOKEN)
+        result = fetch_owned_playlists(_TOKEN)
 
     assert result == {"Alpha": ["id1"], "Beta": ["id2"], "Gamma": ["id3"]}
+
+
+# ---------------------------------------------------------------------------
+# Group 1a (new): fetch_owned_playlists — owner filtering and dual auth header
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_owned_playlists_sends_auth_header_for_both_requests() -> None:
+    # Adversarial: captures all requests; only passes if GET /me AND GET /me/playlists are made
+    captured: list[urllib_request.Request] = []
+
+    def capturing_urlopen(req: urllib_request.Request) -> Any:
+        captured.append(req)
+        if "playlists" not in req.full_url:
+            return _me_response()
+        return _playlist_page_with_ids([])
+
+    with patch("urllib.request.urlopen", side_effect=capturing_urlopen):
+        fetch_owned_playlists(_TOKEN)
+
+    assert len(captured) == 2
+    assert captured[0].get_header("Authorization") == "Bearer test_tok"
+    assert captured[1].get_header("Authorization") == "Bearer test_tok"
+
+
+def test_fetch_owned_playlists_excludes_followed_playlists() -> None:
+    # Adversarial: only a followed playlist exists; result must be empty
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=_route(
+            _me_response(),
+            _playlist_page_items([("Album Name", "fid1", "another_user_id")]),
+        ),
+    ):
+        result = fetch_owned_playlists(_TOKEN)
+
+    assert result == {}
+
+
+def test_fetch_owned_playlists_includes_only_owned_playlists() -> None:
+    # Adversarial: mix of owned and followed; only owned must appear in result
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=_route(
+            _me_response(),
+            _playlist_page_items(
+                [
+                    ("My Album", "pid_owned", _ME_USER_ID),
+                    ("Their Album", "pid_followed", "another_user_id"),
+                ]
+            ),
+        ),
+    ):
+        result = fetch_owned_playlists(_TOKEN)
+
+    assert result == {"My Album": ["pid_owned"]}
+    assert "Their Album" not in result
+
+
+def test_fetch_owned_playlists_collects_owned_across_pages() -> None:
+    # Adversarial: each page has both owned and followed; only owned collected across all pages
+    page1 = _playlist_page_items(
+        [
+            ("Page1 Owned", "p1_owned", _ME_USER_ID),
+            ("Page1 Followed", "p1_followed", "other_id"),
+        ],
+        next_url="https://api.spotify.com/v1/me/playlists?offset=10",
+    )
+    page2 = _playlist_page_items(
+        [
+            ("Page2 Owned", "p2_owned", _ME_USER_ID),
+            ("Page2 Followed", "p2_followed", "other_id"),
+        ],
+    )
+
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=_route(_me_response(), page1, page2),
+    ):
+        result = fetch_owned_playlists(_TOKEN)
+
+    assert result == {"Page1 Owned": ["p1_owned"], "Page2 Owned": ["p2_owned"]}
 
 
 # ---------------------------------------------------------------------------
@@ -390,13 +528,15 @@ def test_find_missing_album_playlists_checks_all_same_named_playlists() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_fetch_user_playlists_api_error_on_second_page_propagates() -> None:
+def test_fetch_owned_playlists_api_error_on_second_page_propagates() -> None:
     page1 = [("Alpha", "id1")]
     call_count = [0]
 
-    def failing_on_second_call(_req: Any) -> Any:
+    def failing_on_third_call(_req: Any) -> Any:
         call_count[0] += 1
         if call_count[0] == 1:
+            return _me_response()
+        if call_count[0] == 2:
             return _playlist_page_with_ids(
                 page1,
                 next_url="https://api.spotify.com/v1/me/playlists?offset=10",
@@ -411,24 +551,25 @@ def test_fetch_user_playlists_api_error_on_second_page_propagates() -> None:
             fp=io.BytesIO(b'{"error": {"status": 500, "message": "Server error"}}'),
         )
 
-    with patch("urllib.request.urlopen", side_effect=failing_on_second_call):
+    with patch("urllib.request.urlopen", side_effect=failing_on_third_call):
         with pytest.raises(
             RuntimeError,
             match=r"Spotify API error \(500 /v1/me/playlists\): Server error",
         ):
-            fetch_user_playlists(_TOKEN)
+            fetch_owned_playlists(_TOKEN)
 
 
 # ---------------------------------------------------------------------------
-# Group 4.1: fetch_user_playlists uses api_request (propagates RuntimeError)
+# Group 4.1: fetch_owned_playlists uses api_request (propagates RuntimeError)
 # ---------------------------------------------------------------------------
 
 
-def test_fetch_user_playlists_propagates_api_error_as_runtime_error() -> None:
+def test_fetch_owned_playlists_propagates_api_error_as_runtime_error() -> None:
+    # Error on GET /me (first call); path in message is /v1/me
     hdrs: MagicMock = MagicMock()
     hdrs.get = lambda key, default=None: default
     http_err = urllib.error.HTTPError(
-        url="https://api.spotify.com/v1/me/playlists",
+        url="https://api.spotify.com/v1/me",
         code=403,
         msg="Forbidden",
         hdrs=hdrs,
@@ -437,9 +578,9 @@ def test_fetch_user_playlists_propagates_api_error_as_runtime_error() -> None:
     with patch("urllib.request.urlopen", side_effect=http_err):
         with pytest.raises(
             RuntimeError,
-            match=r"Spotify API error \(403 /v1/me/playlists\): Forbidden",
+            match=r"Spotify API error \(403 /v1/me\): Forbidden",
         ):
-            fetch_user_playlists(_TOKEN)
+            fetch_owned_playlists(_TOKEN)
 
 
 # ---------------------------------------------------------------------------

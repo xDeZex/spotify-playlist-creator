@@ -16,10 +16,18 @@ class CreatedPlaylist:
     id: str
 
 
-def fetch_user_playlists(token: SpotifyToken) -> dict[str, list[str]]:
+def _fetch_current_user_id(token: SpotifyToken) -> str:
+    if not token.access_token:
+        raise ValueError("No valid token provided")
+    body: dict[str, Any] = api_request(f"{_API_BASE}/me", token)
+    return str(body["id"])
+
+
+def fetch_owned_playlists(token: SpotifyToken) -> dict[str, list[str]]:
     if not token.access_token:
         raise ValueError("No valid token provided")
 
+    user_id = _fetch_current_user_id(token)
     result: dict[str, list[str]] = {}
     url: str | None = f"{_API_BASE}/me/playlists?limit=10"
 
@@ -27,6 +35,8 @@ def fetch_user_playlists(token: SpotifyToken) -> dict[str, list[str]]:
         body: dict[str, Any] = api_request(url, token)
 
         for item in body.get("items", []):
+            if item.get("owner", {}).get("id") != user_id:
+                continue
             name = str(item["name"])
             playlist_id = str(item["id"])
             result.setdefault(name, []).append(playlist_id)
