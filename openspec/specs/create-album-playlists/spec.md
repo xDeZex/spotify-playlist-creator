@@ -1,5 +1,5 @@
 ### Requirement: Create missing Album Playlists for an artist
-For a given artist and their list of Albums, the system SHALL identify which Albums do not already have a matching playlist in the user's library, and return them as a `list[Album]`. An Album has a matching playlist when a same-named playlist exists in the user's library whose first track belongs to that Album (determined by comparing the track's Spotify Album ID with the Album's ID). When multiple playlists share the same name, each is checked; if any matches, the Album is excluded from the result. An empty same-named playlist (no tracks) SHALL be treated as a non-match — the Album is included in the result. The returned list SHALL be sorted in descending release-date order (newest first). Already-matched playlists SHALL be left untouched.
+For a given artist and their list of Albums, the system SHALL identify which Albums do not already have a matching playlist owned by the current user, and return them as a `list[Album]`. An Album has a matching playlist when a same-named playlist owned by the current user exists whose first track belongs to that Album (determined by comparing the track's Spotify Album ID with the Album's ID). Followed playlists owned by other users SHALL be excluded from consideration before any fingerprinting occurs. When multiple owned playlists share the same name, each is checked; if any matches, the Album is excluded from the result. An empty same-named playlist (no tracks) SHALL be treated as a non-match — the Album is included in the result. The returned list SHALL be sorted in descending release-date order (newest first). Already-matched playlists SHALL be left untouched.
 
 #### Scenario: All Albums are new
 - **WHEN** none of the artist's Albums have a matching playlist in the user's library
@@ -32,6 +32,18 @@ For a given artist and their list of Albums, the system SHALL identify which Alb
 #### Scenario: First-track fingerprint API call
 - **WHEN** a same-named playlist is found for an Album
 - **THEN** the system fetches the first track of that playlist using `GET /playlists/{id}/tracks?limit=1` and reads the track's `album.id` field to determine the match
+
+#### Scenario: Followed playlist with same name is ignored
+- **WHEN** a followed playlist (owned by another user) has the same name as an Album
+- **THEN** it is not fingerprinted and the Album is included in the returned list as if no same-named playlist existed
+
+#### Scenario: Owned playlist with same name is fingerprinted
+- **WHEN** a playlist owned by the current user has the same name as an Album
+- **THEN** it is fingerprinted and the Album is excluded if the fingerprint matches
+
+#### Scenario: Fetching owned playlists calls GET /me first
+- **WHEN** the system fetches the candidate playlist set
+- **THEN** it calls `GET /me` to obtain the current user's ID, then filters `GET /me/playlists` results to only those where `owner.id` equals the current user's ID
 
 ### Requirement: Execute step creates and populates playlists for pre-identified missing albums
 Given a list of Albums already identified as missing (output of the planning step), the system SHALL create a Spotify playlist for each Album, populate it with all tracks from that Album, and return a `list[CreatedPlaylist]` in the order albums were processed. The playlist name SHALL match the Album name exactly as returned by Spotify. Track order SHALL match the order returned by Spotify. When an album has more than 100 tracks, tracks SHALL be added in batches of 100, in order.

@@ -21,7 +21,7 @@ The first artist listed in Spotify's artist array for an album. Determines which
 _Avoid_: Main artist, lead artist
 
 **Album Playlist**:
-A Spotify playlist representing one Album — contains all tracks from that Album — living inside an Artist Folder.
+A Spotify playlist owned by the current user, representing one Album — contains all tracks from that Album — living inside an Artist Folder.
 _Avoid_: Album copy, album mirror
 
 **Album**:
