@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+import spotify_playlist_creator.api as _api
 import spotify_playlist_creator.status as _status
 
 
@@ -18,6 +19,11 @@ def _reset_status() -> Generator[None, None, None]:
     _status.configure(_noop_fn)
     _status.set_context("")
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_proactive_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_api, "_proactive_delay", lambda: None)
 
 
 @pytest.fixture(autouse=True)
