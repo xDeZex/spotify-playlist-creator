@@ -170,8 +170,24 @@ def _first_track_response(album_id: str | None) -> Any:
             if album_id is None:
                 body: dict[str, Any] = {"items": []}
             else:
-                body = {"items": [{"track": {"album": {"id": album_id}}}]}
+                body = {"items": [{"item": {"album": {"id": album_id}}}]}
             return json.dumps(body).encode()
+
+        def __enter__(self) -> _Response:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            pass
+
+    return _Response()
+
+
+def _null_item_response() -> Any:
+    """Simulates /items response containing a local file or episode (item is null)."""
+
+    class _Response:
+        def read(self) -> bytes:
+            return json.dumps({"items": [{"item": None}]}).encode()
 
         def __enter__(self) -> _Response:
             return self
@@ -381,6 +397,7 @@ def test_fetch_first_track_album_id_sends_auth_header_with_limit_1() -> None:
     assert captured[0].get_header("Authorization") == "Bearer test_tok"
     assert "pl1" in captured[0].full_url
     assert "limit=1" in captured[0].full_url
+    assert "/playlists/pl1/items" in captured[0].full_url
 
 
 def test_fetch_first_track_album_id_returns_none_for_empty_playlist() -> None:
@@ -389,6 +406,13 @@ def test_fetch_first_track_album_id_returns_none_for_empty_playlist() -> None:
         return_value=_first_track_response(None),
     ):
         result = fetch_first_track_album_id(_TOKEN, "empty_playlist")
+
+    assert result is None
+
+
+def test_fetch_first_track_album_id_returns_none_for_null_item() -> None:
+    with patch("urllib.request.urlopen", return_value=_null_item_response()):
+        result = fetch_first_track_album_id(_TOKEN, "pl_with_episode")
 
     assert result is None
 
@@ -615,7 +639,7 @@ def test_fetch_first_track_album_id_propagates_api_error_as_runtime_error() -> N
     hdrs: MagicMock = MagicMock()
     hdrs.get = lambda key, default=None: default
     http_err = urllib.error.HTTPError(
-        url="https://api.spotify.com/v1/playlists/pl1/tracks",
+        url="https://api.spotify.com/v1/playlists/pl1/items",
         code=404,
         msg="Not Found",
         hdrs=hdrs,
@@ -624,7 +648,7 @@ def test_fetch_first_track_album_id_propagates_api_error_as_runtime_error() -> N
     with patch("urllib.request.urlopen", side_effect=http_err):
         with pytest.raises(
             RuntimeError,
-            match=r"Spotify API error \(404 /v1/playlists/pl1/tracks\): Not found",
+            match=r"Spotify API error \(404 /v1/playlists/pl1/items\): Not found",
         ):
             fetch_first_track_album_id(_TOKEN, "pl1")
 
@@ -837,11 +861,25 @@ def test_fetch_album_track_uris_sends_auth_header() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_add_tracks_to_playlist_calls_items_endpoint() -> None:
+    captured: list[urllib_request.Request] = []
+
+    def capturing_urlopen(req: urllib_request.Request) -> Any:
+        captured.append(req)
+        return _add_tracks_response()
+
+    with patch("urllib.request.urlopen", side_effect=capturing_urlopen):
+        add_tracks_to_playlist(_TOKEN, "pl1", ["spotify:track:t1"])
+
+    assert len(captured) == 1
+    assert "/playlists/pl1/items" in captured[0].full_url
+
+
 def test_add_tracks_to_playlist_propagates_api_error_as_runtime_error() -> None:
     hdrs: MagicMock = MagicMock()
     hdrs.get = lambda key, default=None: default
     http_err = urllib.error.HTTPError(
-        url="https://api.spotify.com/v1/playlists/pl1/tracks",
+        url="https://api.spotify.com/v1/playlists/pl1/items",
         code=403,
         msg="Forbidden",
         hdrs=hdrs,
@@ -851,7 +889,7 @@ def test_add_tracks_to_playlist_propagates_api_error_as_runtime_error() -> None:
     with patch("urllib.request.urlopen", side_effect=http_err):
         with pytest.raises(
             RuntimeError,
-            match=r"Spotify API error \(403 /v1/playlists/pl1/tracks\): Forbidden",
+            match=r"Spotify API error \(403 /v1/playlists/pl1/items\): Forbidden",
         ):
             add_tracks_to_playlist(_TOKEN, "pl1", uris)
 
@@ -904,6 +942,32 @@ def test_add_tracks_to_playlist_batches_over_100() -> None:
 # ---------------------------------------------------------------------------
 # Group 5.6: create_album_playlists populates tracks before returning
 # ---------------------------------------------------------------------------
+
+
+def test_create_album_playlists_posts_tracks_to_items_endpoint() -> None:
+    albums = [_album("a1", "My Album", "2022-01-01")]
+    track_uris = ["spotify:track:u1", "spotify:track:u2"]
+    add_tracks_reqs: list[urllib_request.Request] = []
+
+    def fake_urlopen(req: urllib_request.Request) -> Any:
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if "/me/playlists" in url:
+            return _create_playlist_response("pl1", "My Album")
+        if "albums" in url:
+            return _tracks_page(track_uris)
+        if "playlists" in url and req.data:
+            add_tracks_reqs.append(req)
+            return _add_tracks_response()
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        create_album_playlists(_TOKEN, albums)
+
+    assert len(add_tracks_reqs) == 1
+    raw_data = add_tracks_reqs[0].data
+    assert isinstance(raw_data, bytes)
+    sent_body = json.loads(raw_data.decode())
+    assert sent_body["uris"] == track_uris
 
 
 def test_create_album_playlists_populates_tracks_before_returning() -> None:
