@@ -51,12 +51,15 @@ def fetch_first_track_album_id(token: SpotifyToken, playlist_id: str) -> str | N
         raise ValueError("No valid token provided")
 
     body: dict[str, Any] = api_request(
-        f"{_API_BASE}/playlists/{playlist_id}/tracks?limit=1", token
+        f"{_API_BASE}/playlists/{playlist_id}/items?limit=1", token
     )
     items = body.get("items", [])
     if not items:
         return None
-    return str(items[0]["track"]["album"]["id"])
+    item = items[0].get("item")
+    if item is None:
+        return None
+    return str(item["album"]["id"])
 
 
 def fetch_album_track_uris(token: SpotifyToken, album_id: str) -> list[str]:
@@ -85,7 +88,7 @@ def add_tracks_to_playlist(
     for i in range(0, len(uris), 100):
         batch = uris[i : i + 100]
         api_request(
-            f"{_API_BASE}/playlists/{playlist_id}/tracks",
+            f"{_API_BASE}/playlists/{playlist_id}/items",
             token,
             body={"uris": batch},
         )

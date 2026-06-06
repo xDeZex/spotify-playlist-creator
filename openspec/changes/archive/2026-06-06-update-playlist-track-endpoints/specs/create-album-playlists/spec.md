@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: Create missing Album Playlists for an artist
 For a given artist and their list of Albums, the system SHALL identify which Albums do not already have a matching playlist owned by the current user, and return them as a `list[Album]`. An Album has a matching playlist when a same-named playlist owned by the current user exists whose first track belongs to that Album (determined by comparing the track's Spotify Album ID with the Album's ID). Followed playlists owned by other users SHALL be excluded from consideration before any fingerprinting occurs. When multiple owned playlists share the same name, each is checked; if any matches, the Album is excluded from the result. An empty same-named playlist (no tracks) SHALL be treated as a non-match — the Album is included in the result. The returned list SHALL be sorted in descending release-date order (newest first). Already-matched playlists SHALL be left untouched.
 
@@ -71,18 +73,3 @@ Given a list of Albums already identified as missing (output of the planning ste
 #### Scenario: Track addition API call
 - **WHEN** the execute step adds tracks to a playlist
 - **THEN** it calls `POST /playlists/{id}/items` with the batch of track URIs
-
-### Requirement: API errors propagate as structured RuntimeError
-All HTTP calls within `create_playlists.py` SHALL be made via `api_request`. Errors from the Spotify API SHALL surface as `RuntimeError` with a structured message (see `api-request` spec) and propagate to the caller without wrapping or swallowing.
-
-#### Scenario: API error during playlist fetch
-- **WHEN** the Spotify API returns an error while fetching existing playlists
-- **THEN** a `RuntimeError` with a structured message is raised and propagated
-
-#### Scenario: API error during playlist creation
-- **WHEN** the Spotify API returns an error while creating a playlist
-- **THEN** a `RuntimeError` with a structured message is raised and propagated
-
-#### Scenario: API error during track fetch or add
-- **WHEN** the Spotify API returns an error while fetching album tracks or adding tracks to a playlist
-- **THEN** a `RuntimeError` with a structured message is raised and propagated
