@@ -652,3 +652,120 @@ def test_run_normal_mode_behaviour_unchanged() -> None:
     assert mock_create.call_count == 2
     mock_prompt.assert_called_once_with("Artist A", [_CREATED_A1, _CREATED_A2])
     mock_report.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tasks 6.1-6.4: run() status orchestration
+# ---------------------------------------------------------------------------
+
+_COMMON_PATCHES: dict[str, object] = dict(
+    fetch_saved_albums=lambda tok: [],
+    derive_artists=lambda albums: [],
+    fetch_owned_playlists=lambda tok: {},
+)
+
+
+def test_run_sets_status_before_fetch_saved_albums() -> None:
+    call_log: list[str] = []
+
+    def recording_configure(fn: object) -> None:
+        call_log.append("status.configure")
+
+    def recording_fetch(tok: object) -> list[object]:
+        call_log.append("fetch_saved_albums")
+        return []
+
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch(
+            "spotify_playlist_creator.status.configure", side_effect=recording_configure
+        ),
+        patch(
+            "spotify_playlist_creator.fetch_saved_albums",
+            side_effect=recording_fetch,
+        ),
+        patch("spotify_playlist_creator.derive_artists", return_value=[]),
+        patch("spotify_playlist_creator.fetch_owned_playlists", return_value={}),
+        patch("spotify_playlist_creator.status.clear"),
+    ):
+        run()
+
+    assert call_log.index("status.configure") < call_log.index("fetch_saved_albums")
+
+
+def test_run_sets_context_per_artist_with_post_limit_count() -> None:
+    contexts: list[str] = []
+
+    def recording_set_context(ctx: str) -> None:
+        contexts.append(ctx)
+
+    five_artists = [_ARTIST_A, _ARTIST_B, _ARTIST_C, _ARTIST_D, _ARTIST_E]
+
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[]),
+        patch("spotify_playlist_creator.derive_artists", return_value=five_artists),
+        patch("spotify_playlist_creator.fetch_owned_playlists", return_value={}),
+        patch("spotify_playlist_creator.fetch_artist_releases", return_value=[]),
+        patch("spotify_playlist_creator.classify_releases", return_value=[]),
+        patch("spotify_playlist_creator.find_missing_album_playlists", return_value=[]),
+        patch("spotify_playlist_creator.create_album_playlists", return_value=[]),
+        patch("spotify_playlist_creator.prompt_for_folder"),
+        patch("spotify_playlist_creator.status.configure"),
+        patch(
+            "spotify_playlist_creator.status.set_context",
+            side_effect=recording_set_context,
+        ),
+        patch("spotify_playlist_creator.status.clear"),
+    ):
+        run(limit=3)
+
+    assert contexts == ["[1/3] Artist A", "[2/3] Artist B", "[3/3] Artist C"]
+
+
+def test_run_clears_status_after_processing() -> None:
+    clear_calls: list[int] = []
+
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[]),
+        patch("spotify_playlist_creator.derive_artists", return_value=[]),
+        patch("spotify_playlist_creator.fetch_owned_playlists", return_value={}),
+        patch("spotify_playlist_creator.status.configure"),
+        patch(
+            "spotify_playlist_creator.status.clear",
+            side_effect=lambda: clear_calls.append(1),
+        ),
+    ):
+        run()
+
+    assert len(clear_calls) == 1
+
+
+def test_run_status_active_in_dry_run_mode() -> None:
+    contexts: list[str] = []
+    clear_calls: list[int] = []
+
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[_SAVED_A]),
+        patch("spotify_playlist_creator.derive_artists", return_value=[_ARTIST_A]),
+        patch("spotify_playlist_creator.fetch_owned_playlists", return_value={}),
+        patch("spotify_playlist_creator.fetch_artist_releases", return_value=[]),
+        patch("spotify_playlist_creator.classify_releases", return_value=[]),
+        patch("spotify_playlist_creator.find_missing_album_playlists", return_value=[]),
+        patch("spotify_playlist_creator.report_dry_sync_artist"),
+        patch("spotify_playlist_creator.status.configure"),
+        patch(
+            "spotify_playlist_creator.status.set_context",
+            side_effect=contexts.append,
+        ),
+        patch(
+            "spotify_playlist_creator.status.clear",
+            side_effect=lambda: clear_calls.append(1),
+        ),
+    ):
+        run(dry_run=True)
+
+    assert contexts == ["[1/1] Artist A"]
+    assert len(clear_calls) == 1

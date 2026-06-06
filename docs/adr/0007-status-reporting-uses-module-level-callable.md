@@ -1,0 +1,3 @@
+# Status reporting uses module-level callable
+
+Status reporting uses a module-level callable in `status.py` rather than threading a `status` parameter through every function signature. A callback-threading approach (Shape A) was considered and rejected: it would require changing 7+ function signatures with no benefit beyond avoiding module-level state. Since the script is a single-threaded CLI that calls `run()` once per process, module-level state carries no isolation risk. Tests get the no-op default lambda without any special setup — `run()` always sets its own function at entry, so state is never leaked between calls.

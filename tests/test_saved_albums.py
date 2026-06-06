@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import spotify_playlist_creator.status as status
 from spotify_playlist_creator.auth import SpotifyToken
 from spotify_playlist_creator.models import Artist, SavedAlbum
 from spotify_playlist_creator.saved_albums import derive_artists, fetch_saved_albums
@@ -33,10 +34,20 @@ _EMPTY_TOKEN = SpotifyToken(
 )
 
 
-def _make_response(items: list[dict[str, Any]], next_url: str | None = None) -> Any:
+def _make_response(
+    items: list[dict[str, Any]],
+    next_url: str | None = None,
+    total: int | None = None,
+    limit: int | None = None,
+) -> Any:
     class _Response:
         def read(self) -> bytes:
-            return json.dumps({"items": items, "next": next_url}).encode()
+            body: dict[str, Any] = {"items": items, "next": next_url}
+            if total is not None:
+                body["total"] = total
+            if limit is not None:
+                body["limit"] = limit
+            return json.dumps(body).encode()
 
         def __enter__(self) -> _Response:
             return self
@@ -267,3 +278,47 @@ def test_fetch_saved_albums_api_error_on_second_page_propagates() -> None:
     with patch("urllib.request.urlopen", side_effect=failing_on_second_call):
         with pytest.raises(RuntimeError, match="Spotify API error"):
             fetch_saved_albums(_VALID_TOKEN)
+
+
+# ---------------------------------------------------------------------------
+# Task 4.1: fetch_saved_albums writes pagination status
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_saved_albums_writes_page_progress_for_each_page() -> None:
+    received: list[str] = []
+    status.configure(received.append)
+
+    page1 = [_album_item("id1", "Album One", ["Artist A"])]
+    page2 = [_album_item("id2", "Album Two", ["Artist B"])]
+
+    responses = iter(
+        [
+            _make_response(
+                page1,
+                next_url="https://api.spotify.com/v1/me/albums?offset=10",
+                total=20,
+                limit=10,
+            ),
+            _make_response(page2, next_url=None, total=20, limit=10),
+        ]
+    )
+
+    with patch("urllib.request.urlopen", side_effect=lambda _req: next(responses)):
+        fetch_saved_albums(_VALID_TOKEN)
+
+    assert "\r\033[2Kfetching saved albums (1/2)..." in received
+    assert "\r\033[2Kfetching saved albums (2/2)..." in received
+
+
+def test_fetch_saved_albums_writes_page_progress_when_total_and_limit_absent() -> None:
+    received: list[str] = []
+    status.configure(received.append)
+
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_make_response([]),  # no total or limit fields
+    ):
+        fetch_saved_albums(_VALID_TOKEN)
+
+    assert "\r\033[2Kfetching saved albums (1/1)..." in received
