@@ -24,6 +24,10 @@ Each PR must have exactly one commit and must target `main`. Before creating a P
 
 When asked to "automerge": fetch origin, check `git log origin/main..HEAD` and open PRs (`gh pr list`) to understand the current state. If the commit implements an OpenSpec change, archive it first (`/opsx:archive`) and always sync the spec and amend the commit to include the archived change. Then create a PR for the latest commit and enable automerge (`gh pr merge --auto --rebase`).
 
+## Spotify API
+
+Always consult the official Spotify Web API reference at https://developer.spotify.com/documentation/web-api/reference/ before making any decisions about API behaviour — endpoint parameters, response shape, pagination limits, batch sizes, rate limits, or anything else. Do not infer from existing code or general knowledge; the docs are authoritative.
+
 ## Commands
 
 ```bash

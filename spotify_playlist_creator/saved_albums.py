@@ -17,7 +17,7 @@ def fetch_saved_albums(token: SpotifyToken) -> list[SavedAlbum]:
         raise ValueError("No valid token provided")
 
     results: list[SavedAlbum] = []
-    url: str | None = f"{_SAVED_ALBUMS_URL}?limit=10"
+    url: str | None = f"{_SAVED_ALBUMS_URL}?limit=50"
     page = 0
     total_pages: int | None = None
 
