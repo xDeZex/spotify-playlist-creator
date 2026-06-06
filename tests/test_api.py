@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import spotify_playlist_creator.status as status
 from spotify_playlist_creator.api import api_request
 from spotify_playlist_creator.auth import SpotifyToken
 
@@ -247,3 +248,48 @@ def test_api_request_429_without_retry_after_raises_immediately() -> None:
 
     assert call_count[0] == 1
     mock_sleep.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Task 2.1: 429 retry emits status.write before sleeping
+# ---------------------------------------------------------------------------
+
+
+def test_api_request_429_retry_emits_status_write_before_sleep() -> None:
+    call_count = [0]
+
+    def once_429(_req: Any) -> Any:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise _http_error(429, "{}", retry_after="3")
+        return _ok_response({})
+
+    call_log: list[tuple[str, str]] = []
+
+    def record_write(msg: str) -> None:
+        call_log.append(("write", msg))
+
+    status.configure(record_write)
+
+    with patch("urllib.request.urlopen", side_effect=once_429):
+        with patch("time.sleep", side_effect=lambda _: call_log.append(("sleep", ""))):
+            api_request("https://api.spotify.com/v1/me/albums", _TOKEN)
+
+    write_idx = next(i for i, (k, _) in enumerate(call_log) if k == "write")
+    sleep_idx = next(i for i, (k, _) in enumerate(call_log) if k == "sleep")
+    assert call_log[write_idx][1] == "\r\033[2Krate limited, waiting 3s..."
+    assert write_idx < sleep_idx
+
+
+def test_api_request_429_without_retry_after_does_not_emit_status() -> None:
+    received: list[str] = []
+    status.configure(received.append)
+
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=_http_error(429, "{}", retry_after=None),
+    ):
+        with pytest.raises(RuntimeError):
+            api_request("https://api.spotify.com/v1/me/albums", _TOKEN)
+
+    assert received == []

@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import spotify_playlist_creator.status as status
 from spotify_playlist_creator.auth import SpotifyToken
 from spotify_playlist_creator.create_playlists import (
     add_tracks_to_playlist,
@@ -104,18 +105,23 @@ def _playlist_page_with_ids(
     entries: list[tuple[str, str]],
     next_url: str | None = None,
     owner_id: str = _ME_USER_ID,
+    total: int | None = None,
+    limit: int | None = None,
 ) -> Any:
     class _Response:
         def read(self) -> bytes:
-            return json.dumps(
-                {
-                    "items": [
-                        {"name": n, "id": pid, "owner": {"id": owner_id}}
-                        for n, pid in entries
-                    ],
-                    "next": next_url,
-                }
-            ).encode()
+            body: dict[str, Any] = {
+                "items": [
+                    {"name": n, "id": pid, "owner": {"id": owner_id}}
+                    for n, pid in entries
+                ],
+                "next": next_url,
+            }
+            if total is not None:
+                body["total"] = total
+            if limit is not None:
+                body["limit"] = limit
+            return json.dumps(body).encode()
 
         def __enter__(self) -> _Response:
             return self
@@ -998,3 +1004,101 @@ def test_create_album_playlists_populates_tracks_before_returning() -> None:
     assert "add_tracks" in call_log
     assert call_log.index("create") < call_log.index("fetch_tracks")
     assert call_log.index("fetch_tracks") < call_log.index("add_tracks")
+
+
+# ---------------------------------------------------------------------------
+# Task 4.2: fetch_owned_playlists writes pagination status
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_owned_playlists_writes_page_progress_for_each_page() -> None:
+    received: list[str] = []
+    status.configure(received.append)
+
+    page1 = [("Alpha", "id1"), ("Beta", "id2")]
+    page2 = [("Gamma", "id3")]
+
+    responses = [
+        _me_response(),
+        _playlist_page_with_ids(
+            page1,
+            next_url="https://api.spotify.com/v1/me/playlists?offset=10",
+            total=30,
+            limit=10,
+        ),
+        _playlist_page_with_ids(page2, next_url=None, total=30, limit=10),
+    ]
+    resp_iter = iter(responses)
+
+    with patch("urllib.request.urlopen", side_effect=lambda _req: next(resp_iter)):
+        fetch_owned_playlists(_TOKEN)
+
+    assert "\r\033[2Kfetching owned playlists (1/3)..." in received
+    assert "\r\033[2Kfetching owned playlists (2/3)..." in received
+
+
+def test_fetch_owned_playlists_writes_page_progress_when_total_and_limit_absent() -> (
+    None
+):
+    received: list[str] = []
+    status.configure(received.append)
+
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=_route(
+            _me_response(),
+            _playlist_page_with_ids([]),  # no total or limit fields
+        ),
+    ):
+        fetch_owned_playlists(_TOKEN)
+
+    assert "\r\033[2Kfetching owned playlists (1/1)..." in received
+
+
+# ---------------------------------------------------------------------------
+# Task 5.3: find_missing_album_playlists writes "checking existing playlists..."
+# ---------------------------------------------------------------------------
+
+
+def test_find_missing_album_playlists_writes_checking_status() -> None:
+    received: list[str] = []
+    status.configure(received.append)
+
+    albums = [_album("a1", "Album One", "2023-01-01")]
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        find_missing_album_playlists(_TOKEN, albums, {})
+    mock_urlopen.assert_not_called()
+
+    assert "\r\033[2Kchecking existing playlists..." in received
+
+
+# ---------------------------------------------------------------------------
+# Task 5.4: create_album_playlists writes per-playlist progress
+# ---------------------------------------------------------------------------
+
+
+def test_create_album_playlists_writes_progress_for_each_playlist() -> None:
+    received: list[str] = []
+    status.configure(received.append)
+
+    albums = [
+        _album("a1", "Album One", "2023-01-01"),
+        _album("a2", "Album Two", "2022-01-01"),
+    ]
+    call_count = [0]
+
+    def fake_urlopen(req: Any) -> Any:
+        call_count[0] += 1
+        url = req.full_url
+        if "me/playlists" in url and req.data:
+            idx = call_count[0]
+            return _create_playlist_response(f"pl{idx}", f"Album {idx}")
+        if "albums" in url and "tracks" in url:
+            return _tracks_page([])
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        create_album_playlists(_TOKEN, albums)
+
+    assert "\r\033[2Kcreating playlists (1/2)..." in received
+    assert "\r\033[2Kcreating playlists (2/2)..." in received

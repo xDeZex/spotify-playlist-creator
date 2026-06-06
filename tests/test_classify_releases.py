@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
 import json
+import urllib.error
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+import spotify_playlist_creator.status as status
 from spotify_playlist_creator.auth import SpotifyToken
 from spotify_playlist_creator.classify_releases import (
     classify_releases,
@@ -65,11 +68,9 @@ def test_fetch_album_tracks_raises_for_empty_token() -> None:
 
 
 def test_fetch_album_tracks_calls_correct_endpoint() -> None:
-    import urllib.request
+    captured: list[Any] = []
 
-    captured: list[urllib.request.Request] = []
-
-    def capturing_urlopen(req: urllib.request.Request) -> Any:
+    def capturing_urlopen(req: Any) -> Any:
         captured.append(req)
         return _make_tracks_response([])
 
@@ -90,8 +91,6 @@ def test_fetch_album_tracks_returns_durations_single_page() -> None:
 
 
 def test_fetch_album_tracks_follows_pagination() -> None:
-    import urllib.request
-
     page1 = [_track_item(180_000), _track_item(200_000)]
     page2 = [_track_item(220_000)]
 
@@ -103,9 +102,9 @@ def test_fetch_album_tracks_follows_pagination() -> None:
         _make_tracks_response(page2, next_url=None),
     ]
     response_iter = iter(responses)
-    captured: list[urllib.request.Request] = []
+    captured: list[Any] = []
 
-    def capturing_urlopen(req: urllib.request.Request) -> Any:
+    def capturing_urlopen(req: Any) -> Any:
         captured.append(req)
         return next(response_iter)
 
@@ -116,6 +115,34 @@ def test_fetch_album_tracks_follows_pagination() -> None:
     assert len(captured) == 2
     for req in captured:
         assert req.get_header("Authorization") == "Bearer test_access_token"
+
+
+def test_fetch_album_tracks_retries_on_429_with_retry_after() -> None:
+    call_count = [0]
+    items = [_track_item(120_000)]
+
+    def flaky_urlopen(_req: Any) -> Any:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            hdrs: MagicMock = MagicMock()
+            hdrs.get = lambda key, default=None: (
+                "1" if key == "Retry-After" else default
+            )
+            raise urllib.error.HTTPError(
+                url="https://api.spotify.com/v1/albums/alb1/tracks",
+                code=429,
+                msg="Too Many Requests",
+                hdrs=hdrs,
+                fp=io.BytesIO(b"{}"),
+            )
+        return _make_tracks_response(items)
+
+    with patch("urllib.request.urlopen", side_effect=flaky_urlopen):
+        with patch("time.sleep"):
+            result = fetch_album_tracks(_VALID_TOKEN, "alb1")
+
+    assert result == [120_000]
+    assert call_count[0] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -326,3 +353,38 @@ def test_classify_releases_output_order_matches_input_order() -> None:
 
     assert call_count == 1  # only the single/EP triggers a fetch; albums do not
     assert [r.id for r in result] == ["a1", "ep1", "a2"]
+
+
+# ---------------------------------------------------------------------------
+# Task 5.2: classify_releases writes per-single progress
+# ---------------------------------------------------------------------------
+
+
+def test_classify_releases_writes_progress_for_each_single() -> None:
+    received: list[str] = []
+    status.configure(received.append)
+
+    # Adversarial: 3 singles mixed with albums; progress must count only singles
+    raw_album = _raw(album_id="a1", album_type="album")
+    raw_singles = [_raw(album_id=f"s{i}", album_type="single") for i in range(1, 4)]
+    ep_tracks = [_track_item(5 * 60_000)] * 5  # qualifies as EP
+
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_make_tracks_response(ep_tracks),
+    ):
+        classify_releases(_VALID_TOKEN, [raw_album, *raw_singles])
+
+    assert "\r\033[2Kclassifying singles (1/3)..." in received
+    assert "\r\033[2Kclassifying singles (2/3)..." in received
+    assert "\r\033[2Kclassifying singles (3/3)..." in received
+
+
+def test_classify_releases_no_progress_when_no_singles() -> None:
+    received: list[str] = []
+    status.configure(received.append)
+
+    raw_albums = [_raw(album_id=f"a{i}", album_type="album") for i in range(3)]
+    classify_releases(_VALID_TOKEN, raw_albums)
+
+    assert not any("classifying singles" in msg for msg in received)

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 from typing import Any
 
+from spotify_playlist_creator import status
 from spotify_playlist_creator.api import api_request
 from spotify_playlist_creator.auth import SpotifyToken
 from spotify_playlist_creator.models import Album
@@ -30,9 +32,17 @@ def fetch_owned_playlists(token: SpotifyToken) -> dict[str, list[str]]:
     user_id = _fetch_current_user_id(token)
     result: dict[str, list[str]] = {}
     url: str | None = f"{_API_BASE}/me/playlists?limit=10"
+    page = 0
+    total_pages: int | None = None
 
     while url is not None:
         body: dict[str, Any] = api_request(url, token)
+        page += 1
+        if total_pages is None:
+            total = int(body.get("total", 0))
+            limit_val = int(body.get("limit", 1)) or 1
+            total_pages = max(1, math.ceil(total / limit_val))
+        status.write(f"fetching owned playlists ({page}/{total_pages})...")
 
         for item in body.get("items", []):
             if item.get("owner", {}).get("id") != user_id:
@@ -102,6 +112,8 @@ def find_missing_album_playlists(
     if not token.access_token:
         raise ValueError("No valid token provided")
 
+    status.write("checking existing playlists...")
+
     def _already_exists(album: Album) -> bool:
         for pid in existing_playlists.get(album.name, []):
             if fetch_first_track_album_id(token, pid) == album.id:
@@ -117,8 +129,10 @@ def create_album_playlists(
     token: SpotifyToken,
     new_albums: list[Album],
 ) -> list[CreatedPlaylist]:
+    total = len(new_albums)
     created: list[CreatedPlaylist] = []
-    for album in new_albums:
+    for i, album in enumerate(new_albums, 1):
+        status.write(f"creating playlists ({i}/{total})...")
         body: dict[str, Any] = api_request(
             f"{_API_BASE}/me/playlists",
             token,

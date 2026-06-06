@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import spotify_playlist_creator.status as status
 from spotify_playlist_creator.artist_releases import fetch_artist_releases
 from spotify_playlist_creator.auth import SpotifyToken
 from spotify_playlist_creator.models import RawRelease
@@ -32,10 +33,20 @@ _EMPTY_TOKEN = SpotifyToken(
 )
 
 
-def _make_response(items: list[dict[str, Any]], next_url: str | None = None) -> Any:
+def _make_response(
+    items: list[dict[str, Any]],
+    next_url: str | None = None,
+    total: int | None = None,
+    limit: int | None = None,
+) -> Any:
     class _Response:
         def read(self) -> bytes:
-            return json.dumps({"items": items, "next": next_url}).encode()
+            body: dict[str, Any] = {"items": items, "next": next_url}
+            if total is not None:
+                body["total"] = total
+            if limit is not None:
+                body["limit"] = limit
+            return json.dumps(body).encode()
 
         def __enter__(self) -> _Response:
             return self
@@ -246,3 +257,46 @@ def test_fetch_artist_releases_api_error_on_second_page_propagates() -> None:
             match=r"Spotify API error \(500 /v1/artists/a1/albums\): Server error",
         ):
             fetch_artist_releases(_VALID_TOKEN, "a1")
+
+
+# ---------------------------------------------------------------------------
+# Task 5.1: fetch_artist_releases writes pagination status
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_artist_releases_writes_page_progress_for_each_page() -> None:
+    received: list[str] = []
+    status.configure(received.append)
+
+    page1 = [_release_item("alb1", "Album One", "album", "2019-01-01")]
+    page2 = [_release_item("alb2", "Album Two", "album", "2021-05-14")]
+
+    responses = iter(
+        [
+            _make_response(
+                page1,
+                next_url="https://api.spotify.com/v1/artists/a1/albums?offset=10",
+                total=20,
+                limit=10,
+            ),
+            _make_response(page2, next_url=None, total=20, limit=10),
+        ]
+    )
+
+    with patch("urllib.request.urlopen", side_effect=lambda _req: next(responses)):
+        fetch_artist_releases(_VALID_TOKEN, "a1")
+
+    assert "\r\033[2Kfetching releases (1/2)..." in received
+    assert "\r\033[2Kfetching releases (2/2)..." in received
+
+
+def test_fetch_artist_releases_writes_page_progress_when_total_and_limit_absent() -> (
+    None
+):
+    received: list[str] = []
+    status.configure(received.append)
+
+    with patch("urllib.request.urlopen", return_value=_make_response([])):
+        fetch_artist_releases(_VALID_TOKEN, "a1")
+
+    assert "\r\033[2Kfetching releases (1/1)..." in received

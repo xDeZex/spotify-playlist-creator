@@ -7,6 +7,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from spotify_playlist_creator import status
 from spotify_playlist_creator.auth import SpotifyToken
 
 _MAX_RETRIES = 3
@@ -32,6 +33,7 @@ def api_request(
             if exc.code == 429 and attempt < _MAX_RETRIES - 1:
                 retry_after = exc.headers.get("Retry-After")
                 if retry_after is not None:
+                    status.write(f"rate limited, waiting {retry_after}s...")
                     time.sleep(float(retry_after))
                     continue
             raw = exc.read().decode(errors="replace")
