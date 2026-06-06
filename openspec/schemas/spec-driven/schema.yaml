@@ -1,6 +1,6 @@
 name: spec-driven
 version: 1
-description: Customized spec-driven workflow with strict TDD (RED→GREEN→REVIEW→COMMIT per task, adversarial fixtures, multi-category scenarios) — proposal → specs → [design] → tasks
+description: Customized spec-driven workflow with strict TDD (RED→GREEN→COMMIT→REVIEW per task, adversarial fixtures, multi-category scenarios) — proposal → specs → [design] → tasks
 artifacts:
   - id: proposal
     generates: proposal.md
@@ -245,46 +245,56 @@ apply:
     - tasks
   tracks: tasks.md
   instruction: |
+    Before implementing, check if any planning artifacts (proposal, specs, design, tasks)
+    have uncommitted changes (`git status`). If so, commit them in one commit with message
+    `plan [temporary]: <change-name>`. This preserves the plan as a restore point if the
+    apply needs to be reset. If all artifacts are already committed, skip this step.
+
     Read context files, then implement each task using strict TDD — one behavior at a time.
 
     For each task:
 
     1. **RED** — Write a failing test that specifies the behavior.
 
-       **Lateral consistency check**: Before writing the test, scan functions with
-       similar signatures or in the same module. Note every category of assertion
-       they make (null guard, boundary, sort order, deduplication, etc.). The new
-       test MUST cover every category that is logically applicable to this behavior.
-       If a guard exists on three of four similar functions, it belongs on the fourth.
+      Before writing the test, run the full suite and confirm it is fully clean. If
+      any tests fail, stop and surface them to the user before proceeding.
 
-       **Adversarial fixture principle**: Design fixtures so the test can only pass
-       if the behavior is correctly applied. If the requirement is about sorting,
-       the input must be unsorted. If the requirement is about deduplication, the
-       input must have duplicates. A fixture that already satisfies the postcondition
-       is not a test — replace it.
+      **Lateral consistency check**: Before writing the test, scan functions with
+      similar signatures or in the same module. Note every category of assertion
+      they make (null guard, boundary, sort order, deduplication, etc.). The new
+      test MUST cover every category that is logically applicable to this behavior.
+      If a guard exists on three of four similar functions, it belongs on the fourth.
 
-       Run the test suite and confirm the new test fails. Do not proceed if it passes
-       (the behavior already exists or the test is wrong).
+      **Adversarial fixture principle**: Design fixtures so the test can only pass
+      if the behavior is correctly applied. If the requirement is about sorting,
+      the input must be unsorted. If the requirement is about deduplication, the
+      input must have duplicates. A fixture that already satisfies the postcondition
+      is not a test — replace it.
 
-    2. **GREEN** — Write the minimal code to make the test pass. Run the test
+      Write the test, then run the suite again and confirm only the new test fails.
+      If it passes, stop and ask the user — either the behavior already exists (task
+      may be skippable) or the test is wrong (needs fixing). Do not proceed until
+      resolved.
+
+    2. **GREEN** — Write the minimal code to make the test pass. Run the full test
        suite and confirm it passes without breaking others. No speculative code.
 
-    3. **REVIEW** — Invoke the `code-review` skill, passing the files changed
-       in this cycle (not the full diff). Fix every finding inline. Only file a
-       GitHub issue when the fix is too large or too risky to do now. Do not
-       move to the next task until all findings are fixed or filed.
+    3. Mark task complete: `- [ ]` → `- [x]`
 
-    4. Mark task complete: `- [ ]` → `- [x]`
+    4. **COMMIT** — Commit all changes for this cycle (implementation, tests, and the
+       updated task checkbox) in one commit, with message `task X.Y [temporary]: <short description>`.
 
-    5. **COMMIT** — Commit all changes for this cycle (implementation, tests, and the
-       updated task checkbox) in one commit.
+    5. **REVIEW COMMIT** — Review the files changed in this
+       commit. Fix appropriate findings in a single `review finding (task X.Y) [temporary]: <short description>`
+       commit. Does not loop and does not trigger another review. If there are no
+       findings, proceed to the next task.
 
-    Tests must verify behavior through public interfaces only — not private
-    methods or implementation details. A test that breaks on internal rename is
-    testing the wrong thing.
+    **After all tasks are complete**:
 
-    Test fixtures must be deterministic — use fixed constants, not values that
-    vary between runs.
+    1. Run the `code-review` skill against the full branch diff (`git diff origin/main`).
+       Loop: review → fix (`review finding (full) [temporary]: <short description>`)
+       → review again until no inline-fixable findings remain. Filed-only findings
+       (GitHub issues) do not keep the loop running.
 
-    Pause if: the RED test won't fail (resolve with user), GREEN breaks unrelated
-    tests, or implementation reveals a design issue (suggest updating artifacts).
+    2. Run `/opsx:archive` to archive the change, then commit the archived artifacts
+       in a new `archive [temporary]: <change-name>` commit.
