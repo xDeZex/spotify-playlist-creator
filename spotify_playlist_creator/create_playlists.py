@@ -31,7 +31,7 @@ def fetch_owned_playlists(token: SpotifyToken) -> dict[str, list[str]]:
 
     user_id = _fetch_current_user_id(token)
     result: dict[str, list[str]] = {}
-    url: str | None = f"{_API_BASE}/me/playlists?limit=10"
+    url: str | None = f"{_API_BASE}/me/playlists?limit=50"
     page = 0
     total_pages: int | None = None
 
@@ -77,7 +77,7 @@ def fetch_album_track_uris(token: SpotifyToken, album_id: str) -> list[str]:
         raise ValueError("No valid token provided")
 
     uris: list[str] = []
-    url: str | None = f"{_API_BASE}/albums/{album_id}/tracks?limit=10"
+    url: str | None = f"{_API_BASE}/albums/{album_id}/tracks?limit=50"
 
     while url is not None:
         body: dict[str, Any] = api_request(url, token)

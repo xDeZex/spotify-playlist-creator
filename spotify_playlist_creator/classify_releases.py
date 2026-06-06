@@ -60,7 +60,7 @@ def fetch_album_tracks(token: SpotifyToken, album_id: str) -> list[int]:
         raise ValueError("No valid token provided")
 
     durations: list[int] = []
-    url: str | None = _ALBUM_TRACKS_URL.format(album_id=album_id)
+    url: str | None = _ALBUM_TRACKS_URL.format(album_id=album_id) + "?limit=50"
 
     while url is not None:
         body: dict[str, Any] = api_request(url, token)

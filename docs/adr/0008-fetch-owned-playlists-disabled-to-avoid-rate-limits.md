@@ -1,0 +1,3 @@
+# fetch_owned_playlists disabled pending rate-limit solution
+
+`fetch_owned_playlists` is temporarily disabled in `run()` — `existing_playlists` is hardcoded to an empty dict. The function works correctly but a full library (2,000+ saved albums, 200+ artists) exhausts Spotify's rate limit during the fetch phase alone, producing retry-after values exceeding 80,000 seconds. Until a caching or throttling strategy is in place (see issue #61 and #63), the script runs with no duplicate-detection: all albums appear missing on every run, so `--limit` must be used to process one artist at a time and avoid re-creating existing playlists. Re-enable by restoring the `fetch_owned_playlists(token)` call in `__init__.py` once the rate-limit problem is resolved.
