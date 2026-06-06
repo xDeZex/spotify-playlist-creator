@@ -11,11 +11,17 @@ from spotify_playlist_creator import status
 from spotify_playlist_creator.auth import SpotifyToken
 
 _MAX_RETRIES = 3
+_REQUEST_DELAY = 0.2
+
+
+def _proactive_delay() -> None:
+    time.sleep(_REQUEST_DELAY)
 
 
 def api_request(
     url: str, token: SpotifyToken, *, body: dict[str, Any] | None = None
 ) -> dict[str, Any]:
+    _proactive_delay()
     path = urllib.parse.urlparse(url).path
     headers: dict[str, str] = {"Authorization": f"Bearer {token.access_token}"}
     data: bytes | None = None
