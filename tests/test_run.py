@@ -148,12 +148,14 @@ def test_run_calls_prompt_for_folder_for_each_artist_with_new_playlists() -> Non
             ),
         ),
         patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
+        patch("spotify_playlist_creator.print_final_folder_message") as mock_final,
     ):
         run()
 
     assert mock_prompt.call_count == 2
-    mock_prompt.assert_any_call("Artist A", [_CREATED_A1, _CREATED_A2])
-    mock_prompt.assert_any_call("Artist B", [_CREATED_B1])
+    mock_prompt.assert_any_call("Artist A", None, [])
+    mock_prompt.assert_any_call("Artist B", "Artist A", [_CREATED_A1, _CREATED_A2])
+    mock_final.assert_called_once_with("Artist B", [_CREATED_B1])
 
 
 # ---------------------------------------------------------------------------
@@ -193,10 +195,12 @@ def test_run_does_not_call_prompt_when_no_new_playlists() -> None:
             return_value=[],
         ),
         patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
+        patch("spotify_playlist_creator.print_final_folder_message") as mock_final,
     ):
         run()
 
     mock_prompt.assert_not_called()
+    mock_final.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +208,8 @@ def test_run_does_not_call_prompt_when_no_new_playlists() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_run_calls_prompt_only_for_artists_with_new_playlists() -> None:
+def test_run_calls_prompt_only_for_artists_with_new_albums() -> None:
+    # Adversarial: Artist B has no new albums (find_missing returns []) — prompt must not fire
     with (
         patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
         patch(
@@ -233,20 +238,22 @@ def test_run_calls_prompt_only_for_artists_with_new_playlists() -> None:
         ),
         patch(
             "spotify_playlist_creator.find_missing_album_playlists",
-            side_effect=lambda tok, albums, existing: albums,
+            side_effect=lambda tok, albums, existing: (
+                albums if albums == [_ALBUM_A1, _ALBUM_A2] else []
+            ),
         ),
         patch(
             "spotify_playlist_creator.create_album_playlists",
-            side_effect=lambda tok, albums: (
-                [_CREATED_A1, _CREATED_A2] if albums == [_ALBUM_A1, _ALBUM_A2] else []
-            ),
+            return_value=[_CREATED_A1, _CREATED_A2],
         ),
         patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
+        patch("spotify_playlist_creator.print_final_folder_message") as mock_final,
     ):
         run()
 
     assert mock_prompt.call_count == 1
-    mock_prompt.assert_called_once_with("Artist A", [_CREATED_A1, _CREATED_A2])
+    mock_prompt.assert_called_once_with("Artist A", None, [])
+    mock_final.assert_called_once_with("Artist A", [_CREATED_A1, _CREATED_A2])
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +279,7 @@ def test_run_does_nothing_when_no_saved_albums() -> None:
         ) as mock_find_missing,
         patch("spotify_playlist_creator.create_album_playlists") as mock_create,
         patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
+        patch("spotify_playlist_creator.print_final_folder_message") as mock_final,
     ):
         run()
 
@@ -281,6 +289,7 @@ def test_run_does_nothing_when_no_saved_albums() -> None:
     mock_find_missing.assert_not_called()
     mock_create.assert_not_called()
     mock_prompt.assert_not_called()
+    mock_final.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -320,10 +329,12 @@ def test_run_skips_prompt_for_artist_with_no_qualifying_releases() -> None:
             return_value=[],
         ),
         patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
+        patch("spotify_playlist_creator.print_final_folder_message") as mock_final,
     ):
         run()
 
     mock_prompt.assert_not_called()
+    mock_final.assert_not_called()
 
 
 def test_run_skips_prompt_for_artist_with_no_releases_at_all() -> None:
@@ -358,11 +369,13 @@ def test_run_skips_prompt_for_artist_with_no_releases_at_all() -> None:
             return_value=[],
         ),
         patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
+        patch("spotify_playlist_creator.print_final_folder_message") as mock_final,
     ):
         run()
 
     mock_classify.assert_called_once_with(_TOKEN, [])
     mock_prompt.assert_not_called()
+    mock_final.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -434,20 +447,21 @@ def test_run_forwards_token_to_fetch_artist_releases_classify_and_create() -> No
         ) as mock_classify,
         patch(
             "spotify_playlist_creator.find_missing_album_playlists",
-            return_value=[],
+            return_value=[_ALBUM_A1],
         ) as mock_find_missing,
         patch(
             "spotify_playlist_creator.create_album_playlists",
-            return_value=[],
+            return_value=[_CREATED_A1],
         ) as mock_create,
         patch("spotify_playlist_creator.prompt_for_folder"),
+        patch("spotify_playlist_creator.print_final_folder_message"),
     ):
         run()
 
     mock_releases.assert_called_once_with(_TOKEN, "artist_a")
     mock_classify.assert_called_once_with(_TOKEN, _RAW_A)
     mock_find_missing.assert_called_once_with(_TOKEN, [_ALBUM_A1], _EXISTING_EMPTY)
-    mock_create.assert_called_once_with(_TOKEN, [])
+    mock_create.assert_called_once_with(_TOKEN, [_ALBUM_A1])
 
 
 # ---------------------------------------------------------------------------
@@ -609,7 +623,7 @@ def test_run_dry_run_calls_report_for_every_artist_including_up_to_date() -> Non
 
 def test_run_normal_mode_behaviour_unchanged() -> None:
     # dry_run=False (default): calls both plan and execute steps,
-    # prompt_for_folder only for artists with new playlists, never report
+    # prompt fires before creation, final message fires after last artist, never report
     with (
         patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
         patch(
@@ -643,18 +657,130 @@ def test_run_normal_mode_behaviour_unchanged() -> None:
         patch(
             "spotify_playlist_creator.create_album_playlists",
             side_effect=lambda tok, albums: (
-                [_CREATED_A1, _CREATED_A2] if albums == [_ALBUM_A1, _ALBUM_A2] else []
+                [_CREATED_A1, _CREATED_A2]
+                if albums == [_ALBUM_A1, _ALBUM_A2]
+                else [_CREATED_B1]
             ),
         ) as mock_create,
         patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
+        patch("spotify_playlist_creator.print_final_folder_message") as mock_final,
         patch("spotify_playlist_creator.report_dry_sync_artist") as mock_report,
     ):
         run(dry_run=False)
 
     assert mock_find_missing.call_count == 2
     assert mock_create.call_count == 2
-    mock_prompt.assert_called_once_with("Artist A", [_CREATED_A1, _CREATED_A2])
+    assert mock_prompt.call_count == 2
+    mock_prompt.assert_any_call("Artist A", None, [])
+    mock_prompt.assert_any_call("Artist B", "Artist A", [_CREATED_A1, _CREATED_A2])
+    mock_final.assert_called_once_with("Artist B", [_CREATED_B1])
     mock_report.assert_not_called()
+
+
+def test_run_prompt_fires_before_create_album_playlists() -> None:
+    # Adversarial: call_log captures order; prompt must precede create for each artist
+    call_log: list[str] = []
+
+    def recording_prompt(
+        upcoming: str, previous: str | None, prev_pl: list[object]
+    ) -> None:
+        call_log.append(f"prompt:{upcoming}")
+
+    def recording_create(tok: object, albums: list[object]) -> list[object]:
+        call_log.append("create")
+        return [_CREATED_A1]
+
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[_SAVED_A]),
+        patch("spotify_playlist_creator.derive_artists", return_value=[_ARTIST_A]),
+        patch("spotify_playlist_creator.fetch_artist_releases", return_value=_RAW_A),
+        patch("spotify_playlist_creator.classify_releases", return_value=[_ALBUM_A1]),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[_ALBUM_A1],
+        ),
+        patch(
+            "spotify_playlist_creator.create_album_playlists",
+            side_effect=recording_create,
+        ),
+        patch(
+            "spotify_playlist_creator.prompt_for_folder",
+            side_effect=recording_prompt,
+        ),
+        patch("spotify_playlist_creator.print_final_folder_message"),
+    ):
+        run()
+
+    assert "prompt:Artist A" in call_log
+    assert "create" in call_log
+    assert call_log.index("prompt:Artist A") < call_log.index("create")
+
+
+def test_run_final_message_fires_after_last_artist_creation() -> None:
+    # Adversarial: call_log captures order; final message must come after last create
+    call_log: list[str] = []
+
+    def recording_create(tok: object, albums: list[object]) -> list[object]:
+        call_log.append("create")
+        return [_CREATED_A1]
+
+    def recording_final(artist: str, playlists: list[object]) -> None:
+        call_log.append("final")
+
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[_SAVED_A]),
+        patch("spotify_playlist_creator.derive_artists", return_value=[_ARTIST_A]),
+        patch("spotify_playlist_creator.fetch_artist_releases", return_value=_RAW_A),
+        patch("spotify_playlist_creator.classify_releases", return_value=[_ALBUM_A1]),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[_ALBUM_A1],
+        ),
+        patch(
+            "spotify_playlist_creator.create_album_playlists",
+            side_effect=recording_create,
+        ),
+        patch("spotify_playlist_creator.prompt_for_folder"),
+        patch(
+            "spotify_playlist_creator.print_final_folder_message",
+            side_effect=recording_final,
+        ),
+    ):
+        run()
+
+    assert "create" in call_log
+    assert "final" in call_log
+    assert call_log.index("create") < call_log.index("final")
+
+
+def test_run_single_artist_uses_first_artist_prompt_form_and_final_message() -> None:
+    # Spec scenario: "Only one artist had new playlists — making it both first and last"
+    # WHEN only one artist has new albums
+    # THEN prompt is called with previous_artist=None (first-artist form)
+    # AND print_final_folder_message is called after creation (non-blocking)
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[_SAVED_A]),
+        patch("spotify_playlist_creator.derive_artists", return_value=[_ARTIST_A]),
+        patch("spotify_playlist_creator.fetch_artist_releases", return_value=_RAW_A),
+        patch("spotify_playlist_creator.classify_releases", return_value=[_ALBUM_A1]),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[_ALBUM_A1],
+        ),
+        patch(
+            "spotify_playlist_creator.create_album_playlists",
+            return_value=[_CREATED_A1],
+        ),
+        patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
+        patch("spotify_playlist_creator.print_final_folder_message") as mock_final,
+    ):
+        run()
+
+    mock_prompt.assert_called_once_with("Artist A", None, [])
+    mock_final.assert_called_once_with("Artist A", [_CREATED_A1])
 
 
 # ---------------------------------------------------------------------------

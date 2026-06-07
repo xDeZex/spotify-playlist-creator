@@ -29,7 +29,7 @@ A release from an artist's discography that qualifies for organisation: either a
 _Avoid_: Release
 
 **Sync**:
-The script's run mode — for each artist in scope (respecting the Artist Limit), ensures every Album has an Album Playlist. "Has" is determined by Album identity (Spotify Album ID), not by playlist name — two Albums with the same name are distinct. When new Album Playlists are created for an artist, the script pauses and prompts the user to place them in the Artist Folder manually; artists with no new playlists are skipped silently. Additive only: existing playlists are never deleted, but new Albums from known artists are picked up on each run. All names taken from Spotify as-is. See [ADR-0002](./docs/adr/0002-sync-is-additive-only.md).
+The script's run mode — for each artist in scope (respecting the Artist Limit), ensures every Album has an Album Playlist. "Has" is determined by Album identity (Spotify Album ID), not by playlist name — two Albums with the same name are distinct. Artists with no new playlists are skipped silently. Additive only: existing playlists are never deleted, but new Albums from known artists are picked up on each run. All names taken from Spotify as-is. See [ADR-0002](./docs/adr/0002-sync-is-additive-only.md). When an artist has new Albums: the script first prompts the user to create and position the Artist Folder in Spotify, then creates Album Playlists oldest-release-date first (so the newest Album lands at the top of Spotify's "recently added" view). The prompt for each subsequent artist also lists the previous artist's new playlists newest-first, letting the user drag them into the folder before continuing. After the final artist the script prints the last batch and exits without blocking.
 _Avoid_: Refresh, rebuild, recreate
 
 **Dry Sync**:
@@ -56,4 +56,4 @@ No. Sync is additive only — it creates what's missing, never removes what's th
 
 > "Does the script put the playlists into the folder for me?"
 
-No — the script creates the Album Playlists and prints the list, then waits. You create the Artist Folder in Spotify and drag the playlists in, then press Enter to continue to the next artist.
+No — but the flow is designed around you doing it. Before creating playlists for an artist, the script pauses and asks you to create and position the Artist Folder in Spotify. Once you press Enter, it creates the Album Playlists oldest-first so the newest album sits at the top of "recently added." The prompt for the next artist lists the previous batch newest-first so you know what to drag in before moving on. After the last artist, the script prints the final list and exits — no extra wait.

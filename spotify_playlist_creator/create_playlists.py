@@ -121,7 +121,7 @@ def find_missing_album_playlists(
         return False
 
     new_albums = [a for a in albums if not _already_exists(a)]
-    new_albums.sort(key=lambda a: a.release_date, reverse=True)
+    new_albums.sort(key=lambda a: a.release_date, reverse=False)
     return new_albums
 
 
