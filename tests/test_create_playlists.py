@@ -673,22 +673,20 @@ def test_find_missing_album_playlists_returns_empty_for_empty_input() -> None:
     assert result == []
 
 
-def test_find_missing_album_playlists_returns_all_sorted_desc_when_no_existing() -> (
-    None
-):
-    # Adversarial: input is ascending order; output must be descending
+def test_find_missing_album_playlists_returns_all_sorted_asc_when_no_existing() -> None:
+    # Adversarial: input is descending order; output must be ascending (oldest first)
     albums = [
-        _album("a1", "Oldest", "2019-01-01"),
         _album("a2", "Newest", "2023-06-01"),
         _album("a3", "Middle", "2021-03-15"),
+        _album("a1", "Oldest", "2019-01-01"),
     ]
     with patch("urllib.request.urlopen") as mock_urlopen:
         result = find_missing_album_playlists(_TOKEN, albums, {})
     mock_urlopen.assert_not_called()
     assert result == [
-        _album("a2", "Newest", "2023-06-01"),
-        _album("a3", "Middle", "2021-03-15"),
         _album("a1", "Oldest", "2019-01-01"),
+        _album("a3", "Middle", "2021-03-15"),
+        _album("a2", "Newest", "2023-06-01"),
     ]
 
 
@@ -760,16 +758,16 @@ def test_find_missing_album_playlists_excludes_when_second_of_two_playlists_matc
 
 
 def test_find_missing_album_playlists_sort_handles_mixed_date_precision() -> None:
-    # Adversarial: input ordered differently from expected descending output
+    # Adversarial: input ordered differently from expected ascending output (oldest first)
     albums = [
-        _album("a1", "Year Only", "2021"),
-        _album("a3", "Month Only", "2021-03"),
         _album("a2", "Full Date", "2021-06-15"),
+        _album("a3", "Month Only", "2021-03"),
+        _album("a1", "Year Only", "2021"),
     ]
     with patch("urllib.request.urlopen") as mock_urlopen:
         result = find_missing_album_playlists(_TOKEN, albums, {})
     mock_urlopen.assert_not_called()
-    assert [a.name for a in result] == ["Full Date", "Month Only", "Year Only"]
+    assert [a.name for a in result] == ["Year Only", "Month Only", "Full Date"]
 
 
 # ---------------------------------------------------------------------------
