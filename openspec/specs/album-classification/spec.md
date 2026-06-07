@@ -5,20 +5,28 @@ The system SHALL represent a classified, qualifying release as an `Album` datacl
 - **WHEN** a `RawRelease` passes classification
 - **THEN** an `Album` is constructed with `id`, `name`, and `release_date` copied directly from the `RawRelease`
 
-### Requirement: Batch-fetch track durations for multiple singles
-The system SHALL provide a `fetch_singles_durations(token, ids: list[str]) -> dict[str, list[int]]` function that calls `GET /v1/albums?ids=<comma-separated-ids>` via `api_request`, extracts `tracks.items[*].duration_ms` from each album object in the response, and returns a dict mapping each album ID to its list of duration_ms integers. Albums returned as `null` in the response (unavailable in the user's market) SHALL be omitted from the returned dict silently. The function accepts up to 20 IDs per call; the caller is responsible for chunking.
+### Requirement: Fetch track durations for a release
+The system SHALL fetch per-track duration data for a given album ID by calling `GET /albums/{id}/tracks` via `api_request` (not raw `urlopen`), with pagination, returning a flat list of `duration_ms` integers — one per track, in API order.
 
-#### Scenario: Durations extracted for all returned albums
-- **WHEN** `fetch_singles_durations` is called with a list of IDs and the API returns album objects with inline tracks
-- **THEN** the returned dict maps each album ID to a list of `duration_ms` integers in API order
+#### Scenario: Single page of tracks
+- **WHEN** the Spotify API returns one page of tracks with no `next` URL
+- **THEN** the `duration_ms` of each track is collected and returned as a list
 
-#### Scenario: Null album in response is skipped silently
-- **WHEN** the API returns `null` at a position in the `albums` array (album unavailable in market)
-- **THEN** that album ID is absent from the returned dict and no error is raised
+#### Scenario: Multiple pages of tracks
+- **WHEN** the Spotify API returns a `next` URL on the first page
+- **THEN** subsequent pages are fetched until `next` is null and all durations are combined
 
-#### Scenario: Correct URL and Authorization header sent
-- **WHEN** `fetch_singles_durations` is called with IDs `["a1", "a2"]` and a valid token
-- **THEN** a single request is made to `GET /v1/albums?ids=a1,a2` with `Authorization: Bearer <token>`
+#### Scenario: Authorization header sent
+- **WHEN** the function is called with a valid token
+- **THEN** every request includes an `Authorization: Bearer <token>` header
+
+#### Scenario: Missing token
+- **WHEN** the function is called with an empty access token
+- **THEN** a `ValueError` is raised and no HTTP request is made
+
+#### Scenario: 429 on track fetch is retried
+- **WHEN** `api_request` raises a 429 retry internally while fetching tracks
+- **THEN** the retry is handled by `api_request` and the caller receives the eventual successful result
 
 ### Requirement: Classify a list of raw releases into Albums
 The system SHALL provide a `classify_releases` function that accepts a `SpotifyToken` and a `list[RawRelease]` and returns a `list[Album]` containing only qualifying releases, in the same relative order as the input.
@@ -47,12 +55,12 @@ The system SHALL provide a `classify_releases` function that accepts a `SpotifyT
 - **WHEN** an empty list of `RawRelease` objects is passed
 - **THEN** an empty list is returned
 
-### Requirement: classify_releases emits per-batch progress
-When classifying singles (releases with `album_type == "single"`), `classify_releases` SHALL call `status.write(f"classifying singles ({n}/{total})...")` after fetching each batch of durations, where `n` is the count of singles processed so far (capped at `total`) and `total` is the total number of singles in the input list. The message SHALL be written once per batch (up to 20 singles per batch), not once per individual single.
+### Requirement: classify_releases emits per-single progress
+When classifying singles (releases with `album_type == "single"`), `classify_releases` SHALL call `status.write(f"classifying singles ({i}/{total})...")` before fetching track durations for each single, where `i` is the 1-based index of the current single being checked and `total` is the total number of singles in the input list.
 
-#### Scenario: Progress written once per batch
-- **WHEN** a list of 25 singles is classified (2 batches: 20 then 5)
-- **THEN** `status.write("classifying singles (20/25)...")` is called after the first batch and `status.write("classifying singles (25/25)...")` is called after the second batch
+#### Scenario: Progress written for each single
+- **WHEN** a list of 3 singles is classified
+- **THEN** `status.write("classifying singles (1/3)...")`, `status.write("classifying singles (2/3)...")`, and `status.write("classifying singles (3/3)...")` are each called in order
 
 #### Scenario: No singles — no progress written
 - **WHEN** the input contains only full albums and no singles
