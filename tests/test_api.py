@@ -8,9 +8,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import spotify_playlist_creator.api as _api_module
 import spotify_playlist_creator.status as status
 from spotify_playlist_creator.api import api_request
 from spotify_playlist_creator.auth import SpotifyToken
+
+# Captured before any monkeypatching so the autouse fixture does not interfere.
+_REAL_PROACTIVE_DELAY = _api_module._proactive_delay
 
 _TOKEN = SpotifyToken(
     access_token="tok",
@@ -293,3 +297,33 @@ def test_api_request_429_without_retry_after_does_not_emit_status() -> None:
             api_request("https://api.spotify.com/v1/me/albums", _TOKEN)
 
     assert received == []
+
+
+# ---------------------------------------------------------------------------
+# Task 3.1: GET call causes time.sleep to be called with 0.2
+# ---------------------------------------------------------------------------
+
+
+def test_get_request_sleeps_read_delay() -> None:
+    with patch("urllib.request.urlopen", return_value=_ok_response({})):
+        with patch("time.sleep") as mock_sleep:
+            with patch.object(_api_module, "_proactive_delay", _REAL_PROACTIVE_DELAY):
+                api_request("https://api.spotify.com/v1/me/albums", _TOKEN)
+    mock_sleep.assert_called_once_with(0.2)
+
+
+# ---------------------------------------------------------------------------
+# Task 3.2: POST call causes time.sleep to be called with 1.0
+# ---------------------------------------------------------------------------
+
+
+def test_post_request_sleeps_write_delay() -> None:
+    with patch("urllib.request.urlopen", return_value=_ok_response({})):
+        with patch("time.sleep") as mock_sleep:
+            with patch.object(_api_module, "_proactive_delay", _REAL_PROACTIVE_DELAY):
+                api_request(
+                    "https://api.spotify.com/v1/me/playlists",
+                    _TOKEN,
+                    body={"name": "x"},
+                )
+    mock_sleep.assert_called_once_with(1.0)
