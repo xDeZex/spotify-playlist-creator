@@ -1,0 +1,3 @@
+# Batch EP classification via GET /v1/albums
+
+EP classification previously called `GET /v1/albums/{id}/tracks` once per single, producing ~2,000 API calls for a typical library and being the primary driver of rate-limit exhaustion. We replaced this with `GET /v1/albums?ids=...` (up to 20 IDs per call), which returns track durations inline, reducing calls to ~100. The per-item endpoint was simpler and used the same response shape as existing code; the batch endpoint requires different response parsing and null-album handling (albums unavailable in the user's market are returned as `null` and are skipped silently, which excludes them from EP consideration). The 20× call reduction was the deciding factor.
