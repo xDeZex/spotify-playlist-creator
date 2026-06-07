@@ -1,0 +1,3 @@
+# Write endpoints use a higher proactive delay, detected via request body presence
+
+Spotify rate-limits write endpoints far more aggressively than read endpoints — playlist creation has produced Retry-After values of ~80,000 s (~22 hours). We apply a 1 s proactive delay before any POST request and 0.2 s before GET requests, distinguishing the two by whether `api_request` received a `body` argument (body present → POST → write delay; body absent → GET → read delay). An explicit `delay` parameter per call-site was considered but rejected: it requires every write call-site to opt in, and new writes added in future would silently default to the read delay.

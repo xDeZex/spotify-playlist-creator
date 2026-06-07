@@ -23,7 +23,7 @@ def _reset_status() -> Generator[None, None, None]:
 
 @pytest.fixture(autouse=True)
 def _no_proactive_delay(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_api, "_proactive_delay", lambda: None)
+    monkeypatch.setattr(_api, "_proactive_delay", lambda is_write=False: None)
 
 
 @pytest.fixture(autouse=True)
