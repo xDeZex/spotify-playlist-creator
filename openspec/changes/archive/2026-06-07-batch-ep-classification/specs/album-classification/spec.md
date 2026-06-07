@@ -1,9 +1,4 @@
-### Requirement: Album model
-The system SHALL represent a classified, qualifying release as an `Album` dataclass with the following fields: `id` (Spotify album ID), `name` (display name), `release_date` (partial ISO string as returned by Spotify: `"YYYY"`, `"YYYY-MM"`, or `"YYYY-MM-DD"`). The dataclass SHALL be frozen.
-
-#### Scenario: Fields populated from classification
-- **WHEN** a `RawRelease` passes classification
-- **THEN** an `Album` is constructed with `id`, `name`, and `release_date` copied directly from the `RawRelease`
+## ADDED Requirements
 
 ### Requirement: Batch-fetch track durations for multiple singles
 The system SHALL provide a `fetch_singles_durations(token, ids: list[str]) -> dict[str, list[int]]` function that calls `GET /v1/albums?ids=<comma-separated-ids>` via `api_request`, extracts `tracks.items[*].duration_ms` from each album object in the response, and returns a dict mapping each album ID to its list of duration_ms integers. Albums returned as `null` in the response (unavailable in the user's market) SHALL be omitted from the returned dict silently. The function accepts up to 20 IDs per call; the caller is responsible for chunking.
@@ -20,34 +15,9 @@ The system SHALL provide a `fetch_singles_durations(token, ids: list[str]) -> di
 - **WHEN** `fetch_singles_durations` is called with IDs `["a1", "a2"]` and a valid token
 - **THEN** a single request is made to `GET /v1/albums?ids=a1,a2` with `Authorization: Bearer <token>`
 
-### Requirement: Classify a list of raw releases into Albums
-The system SHALL provide a `classify_releases` function that accepts a `SpotifyToken` and a `list[RawRelease]` and returns a `list[Album]` containing only qualifying releases, in the same relative order as the input.
+## MODIFIED Requirements
 
-#### Scenario: Full album passes without fetching tracks
-- **WHEN** a `RawRelease` has `album_type` of `"album"`
-- **THEN** it is included as an `Album` and no track-duration fetch is performed for it
-
-#### Scenario: Single with 4–6 tracks and short total duration qualifies as EP
-- **WHEN** a `RawRelease` has `album_type` of `"single"`, the tracks endpoint returns between 4 and 6 tracks, and their total duration is 30 minutes or less
-- **THEN** it is included as an `Album`
-
-#### Scenario: Single with 1–3 tracks qualifies as EP when one track exceeds 10 minutes and total exceeds 30 minutes
-- **WHEN** a `RawRelease` has `album_type` of `"single"`, the tracks endpoint returns between 1 and 3 tracks, at least one track duration exceeds 10 minutes, and the sum of all track durations exceeds 30 minutes
-- **THEN** it is included as an `Album`
-
-#### Scenario: Actual single is dropped
-- **WHEN** a `RawRelease` has `album_type` of `"single"` and does not meet either EP rule
-- **THEN** it is excluded from the result
-
-#### Scenario: Compilation is dropped
-- **WHEN** a `RawRelease` has `album_type` of `"compilation"`
-- **THEN** it is excluded from the result and no track-duration fetch is performed for it
-
-#### Scenario: Empty input
-- **WHEN** an empty list of `RawRelease` objects is passed
-- **THEN** an empty list is returned
-
-### Requirement: classify_releases emits per-batch progress
+### Requirement: classify_releases emits per-single progress
 When classifying singles (releases with `album_type == "single"`), `classify_releases` SHALL call `status.write(f"classifying singles ({n}/{total})...")` after fetching each batch of durations, where `n` is the count of singles processed so far (capped at `total`) and `total` is the total number of singles in the input list. The message SHALL be written once per batch (up to 20 singles per batch), not once per individual single.
 
 #### Scenario: Progress written once per batch
@@ -59,3 +29,9 @@ When classifying singles (releases with `album_type == "single"`), `classify_rel
 - **THEN** no `status.write` call is made by `classify_releases`
 
 #### Scenario: (no external I/O contract — status calls are fire-and-forget)
+
+## REMOVED Requirements
+
+### Requirement: Fetch track durations for a release
+**Reason**: Replaced by `fetch_singles_durations`, which uses the batch `GET /v1/albums?ids=...` endpoint to fetch durations for up to 20 singles per call, reducing API call volume ~20×.
+**Migration**: Call `fetch_singles_durations(token, ids)` with a list of album IDs (max 20); it returns a `dict[str, list[int]]` keyed by album ID.
