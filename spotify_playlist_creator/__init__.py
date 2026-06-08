@@ -35,7 +35,7 @@ def run(limit: int | None = None, dry_run: bool = False) -> None:
 
     status.configure(_write_status)
     token: SpotifyToken = authenticate()
-    saved_albums = fetch_saved_albums(token)
+    saved_albums = fetch_saved_albums(token, limit=limit)
     artists = derive_artists(saved_albums)[:limit]
     n = len(artists)
     existing_playlists: dict[str, list[str]] = {}  # fetch_owned_playlists(token)
