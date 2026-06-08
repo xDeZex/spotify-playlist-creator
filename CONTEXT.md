@@ -16,6 +16,10 @@ _Avoid_: Artist directory, artist group
 A Spotify artist identified by their Spotify ID. Two artists with the same name are distinct if their IDs differ.
 _Avoid_: Band, musician
 
+**Genre**:
+A musical style tag sourced from Last.fm for an Artist. Displayed during a Sync to guide the user when placing an Artist Folder into the correct genre folder.
+_Avoid_: Tag, category, style
+
 **Primary Artist**:
 The first artist listed in Spotify's artist array for an album. Determines which Artist Folder an album belongs to.
 _Avoid_: Main artist, lead artist

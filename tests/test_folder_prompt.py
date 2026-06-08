@@ -137,3 +137,77 @@ def test_prompt_for_folder_suppresses_previous_section_when_previous_playlists_e
 
     out = capsys.readouterr().out
     assert "Prev Artist" not in out
+
+
+# ---------------------------------------------------------------------------
+# Group 5: genre in prompt_for_folder
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_for_folder_shows_genre_tag_when_known(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with patch("builtins.input", return_value=""):
+        prompt_for_folder("Tomoyo Harada", None, [], genre=["j-pop", "japanese"])
+
+    out = capsys.readouterr().out
+    assert "[j-pop, japanese]" in out
+
+
+def test_prompt_for_folder_shows_genre_not_found_when_empty_list(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Adversarial: genre=[] (no tags found) must show [genre not found]
+    with patch("builtins.input", return_value=""):
+        prompt_for_folder("Some Artist", None, [], genre=[])
+
+    out = capsys.readouterr().out
+    assert "[genre not found]" in out
+
+
+def test_prompt_for_folder_shows_failed_to_get_genre_when_none(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Adversarial: genre=None (fetch error) must show [failed to get genre]
+    with patch("builtins.input", return_value=""):
+        prompt_for_folder("Some Artist", None, [], genre=None)
+
+    out = capsys.readouterr().out
+    assert "[failed to get genre]" in out
+
+
+# ---------------------------------------------------------------------------
+# Group 6: genre in print_final_folder_message
+# ---------------------------------------------------------------------------
+
+
+def test_print_final_folder_message_shows_genre_tag_when_known(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    playlists = [CreatedPlaylist(name="Album", id="p1")]
+    print_final_folder_message("Tomoyo Harada", playlists, genre=["j-pop", "japanese"])
+
+    out = capsys.readouterr().out
+    assert "[j-pop, japanese]" in out
+
+
+def test_print_final_folder_message_shows_genre_not_found_when_empty_list(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Adversarial: genre=[] (no tags found) must show [genre not found]
+    playlists = [CreatedPlaylist(name="Album", id="p1")]
+    print_final_folder_message("Some Artist", playlists, genre=[])
+
+    out = capsys.readouterr().out
+    assert "[genre not found]" in out
+
+
+def test_print_final_folder_message_shows_failed_to_get_genre_when_none(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Adversarial: genre=None (fetch error) must show [failed to get genre]
+    playlists = [CreatedPlaylist(name="Album", id="p1")]
+    print_final_folder_message("Some Artist", playlists, genre=None)
+
+    out = capsys.readouterr().out
+    assert "[failed to get genre]" in out

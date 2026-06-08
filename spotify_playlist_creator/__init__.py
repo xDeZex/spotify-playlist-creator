@@ -1,6 +1,6 @@
 import sys
 
-from spotify_playlist_creator import status
+from spotify_playlist_creator import lastfm, status
 from spotify_playlist_creator.artist_releases import fetch_artist_releases
 from spotify_playlist_creator.auth import SpotifyToken, authenticate
 from spotify_playlist_creator.classify_releases import classify_releases
@@ -34,6 +34,7 @@ def run(limit: int | None = None, dry_run: bool = False) -> None:
         sys.stdout.flush()
 
     status.configure(_write_status)
+    api_key = lastfm.get_api_key()
     token: SpotifyToken = authenticate()
     saved_albums = fetch_saved_albums(token, limit=limit)
     artists = derive_artists(saved_albums)[:limit]
@@ -42,23 +43,33 @@ def run(limit: int | None = None, dry_run: bool = False) -> None:
 
     previous_artist: str | None = None
     previous_created: list[CreatedPlaylist] = []
+    previous_genre: list[str] | None = None
 
     for i, artist in enumerate(artists, 1):
         status.set_context(f"[{i}/{n}] {artist.name}")
+        try:
+            genre: list[str] | None = lastfm.fetch_artist_genre(artist.name, api_key)
+        except RuntimeError:
+            genre = None
         raw_releases = fetch_artist_releases(token, artist.id)
         albums = classify_releases(token, raw_releases)
         new_albums = find_missing_album_playlists(token, albums, existing_playlists)
         if dry_run:
-            report_dry_sync_artist(artist.name, new_albums)
+            report_dry_sync_artist(artist.name, new_albums, genre=genre)
         else:
             if not new_albums:
                 continue
-            prompt_for_folder(artist.name, previous_artist, previous_created)
+            prompt_for_folder(
+                artist.name, previous_artist, previous_created, genre=genre
+            )
             created = create_album_playlists(token, new_albums)
             previous_artist = artist.name
             previous_created = created
+            previous_genre = genre
 
     if not dry_run and previous_artist is not None:
-        print_final_folder_message(previous_artist, previous_created)
+        print_final_folder_message(
+            previous_artist, previous_created, genre=previous_genre
+        )
 
     status.clear()

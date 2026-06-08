@@ -92,3 +92,44 @@ def test_report_dry_sync_artist_never_calls_input_when_up_to_date() -> None:
     with patch("builtins.input") as mock_input:
         report_dry_sync_artist("Tyler, the Creator", [])
     mock_input.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Group 4: genre in report_dry_sync_artist
+# ---------------------------------------------------------------------------
+
+
+def test_report_dry_sync_artist_shows_genre_tag_on_artist_line(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    report_dry_sync_artist("Tyler, the Creator", [_ALBUM_A], genre=["hip-hop"])
+    out = capsys.readouterr().out
+    assert "[hip-hop]" in out
+
+
+def test_report_dry_sync_artist_shows_multiple_genre_tags(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    report_dry_sync_artist(
+        "Tyler, the Creator", [_ALBUM_A], genre=["hip-hop", "rap", "alternative"]
+    )
+    out = capsys.readouterr().out
+    assert "[hip-hop, rap, alternative]" in out
+
+
+def test_report_dry_sync_artist_shows_genre_not_found_when_empty_list(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Adversarial: genre=[] (no tags found) must show [genre not found]
+    report_dry_sync_artist("Tyler, the Creator", [], genre=[])
+    out = capsys.readouterr().out
+    assert "[genre not found]" in out
+
+
+def test_report_dry_sync_artist_shows_failed_to_get_genre_when_none(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Adversarial: genre=None (fetch error) must show [failed to get genre]
+    report_dry_sync_artist("Tyler, the Creator", [], genre=None)
+    out = capsys.readouterr().out
+    assert "[failed to get genre]" in out
