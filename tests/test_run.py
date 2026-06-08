@@ -100,7 +100,7 @@ def test_run_forwards_token_to_fetch_saved_albums() -> None:
     ):
         run()
 
-    mock_fetch.assert_called_once_with(_TOKEN)
+    mock_fetch.assert_called_once_with(_TOKEN, limit=None)
 
 
 # ---------------------------------------------------------------------------
@@ -800,7 +800,7 @@ def test_run_sets_status_before_fetch_saved_albums() -> None:
     def recording_configure(fn: object) -> None:
         call_log.append("status.configure")
 
-    def recording_fetch(tok: object) -> list[object]:
+    def recording_fetch(tok: object, *, limit: int | None = None) -> list[object]:
         call_log.append("fetch_saved_albums")
         return []
 
@@ -898,3 +898,42 @@ def test_run_status_active_in_dry_run_mode() -> None:
 
     assert contexts == ["[1/1] Artist A"]
     assert len(clear_calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# Group: run() threads limit through to fetch_saved_albums (tasks 6.1, 6.2)
+# ---------------------------------------------------------------------------
+
+
+def test_run_passes_limit_to_fetch_saved_albums() -> None:
+    """run(limit=N) must call fetch_saved_albums(token, limit=N)."""
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch(
+            "spotify_playlist_creator.fetch_saved_albums", return_value=[]
+        ) as mock_fetch,
+        patch("spotify_playlist_creator.derive_artists", return_value=[]),
+        patch("spotify_playlist_creator.fetch_artist_releases", return_value=[]),
+        patch("spotify_playlist_creator.classify_releases", return_value=[]),
+        patch("spotify_playlist_creator.find_missing_album_playlists", return_value=[]),
+    ):
+        run(limit=3)
+
+    mock_fetch.assert_called_once_with(_TOKEN, limit=3)
+
+
+def test_run_passes_none_limit_to_fetch_saved_albums() -> None:
+    """run(limit=None) must call fetch_saved_albums(token, limit=None)."""
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch(
+            "spotify_playlist_creator.fetch_saved_albums", return_value=[]
+        ) as mock_fetch,
+        patch("spotify_playlist_creator.derive_artists", return_value=[]),
+        patch("spotify_playlist_creator.fetch_artist_releases", return_value=[]),
+        patch("spotify_playlist_creator.classify_releases", return_value=[]),
+        patch("spotify_playlist_creator.find_missing_album_playlists", return_value=[]),
+    ):
+        run(limit=None)
+
+    mock_fetch.assert_called_once_with(_TOKEN, limit=None)

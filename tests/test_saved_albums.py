@@ -322,3 +322,299 @@ def test_fetch_saved_albums_writes_page_progress_when_total_and_limit_absent() -
         fetch_saved_albums(_VALID_TOKEN)
 
     assert "\r\033[2Kfetching saved albums (1/1)..." in received
+
+
+# ---------------------------------------------------------------------------
+# Group 3: limit parameter — signature and backward compatibility
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_saved_albums_accepts_limit_keyword_arg() -> None:
+    """fetch_saved_albums(token, limit=N) must not raise TypeError."""
+    items = [
+        _album_item("id1", "A1", ["Artist A"], added_at="2023-01-01T00:00:00Z"),
+        _album_item("id2", "A2", ["Artist B"], added_at="2023-02-01T00:00:00Z"),
+        _album_item("id3", "A3", ["Artist C"], added_at="2023-03-01T00:00:00Z"),
+    ]
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_make_response(items, total=3, limit=50),
+    ):
+        result = fetch_saved_albums(_VALID_TOKEN, limit=2)
+    assert [r.id for r in result] == ["id1", "id2", "id3"]
+
+
+# ---------------------------------------------------------------------------
+# Group 4: probe call behaviour (tasks 2.1, 2.2, 2.3)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_saved_albums_limit_first_call_is_probe_at_offset_zero() -> None:
+    """When limit is set and total > 50, the first request must be offset=0."""
+    captured_urls: list[str] = []
+
+    def side_effect(req: urllib.request.Request) -> Any:
+        captured_urls.append(req.full_url)
+        # Probe: total=100 (2 pages).  Backward page: just one album.
+        if not captured_urls or len(captured_urls) == 1:
+            return _make_response(
+                [
+                    _album_item(
+                        "newest",
+                        "Newest",
+                        ["Artist X"],
+                        added_at="2024-12-01T00:00:00Z",
+                    )
+                ],
+                total=100,
+                limit=50,
+            )
+        return _make_response(
+            [
+                _album_item(
+                    "oldest", "Oldest", ["Artist Y"], added_at="2023-01-01T00:00:00Z"
+                )
+            ],
+            total=100,
+            limit=50,
+        )
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        fetch_saved_albums(_VALID_TOKEN, limit=1)
+
+    assert "offset=" not in captured_urls[0] or "offset=0" in captured_urls[0]
+
+
+def test_fetch_saved_albums_limit_single_page_returns_probe_only() -> None:
+    """When total <= 50, probe items are returned directly; no further requests."""
+    probe_items = [
+        _album_item("id1", "A1", ["Artist A"], added_at="2023-01-01T00:00:00Z"),
+        _album_item("id2", "A2", ["Artist B"], added_at="2023-06-01T00:00:00Z"),
+    ]
+    call_count = [0]
+
+    def side_effect(_req: Any) -> Any:
+        call_count[0] += 1
+        return _make_response(probe_items, total=2, limit=50)
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        result = fetch_saved_albums(_VALID_TOKEN, limit=2)
+
+    assert call_count[0] == 1
+    assert [r.id for r in result] == ["id1", "id2"]
+
+
+def test_fetch_saved_albums_limit_empty_library_returns_empty() -> None:
+    """When total == 0, return [] immediately after the probe."""
+    call_count = [0]
+
+    def side_effect(_req: Any) -> Any:
+        call_count[0] += 1
+        return _make_response([], total=0, limit=50)
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        result = fetch_saved_albums(_VALID_TOKEN, limit=4)
+
+    assert result == []
+    assert call_count[0] == 1
+
+
+# ---------------------------------------------------------------------------
+# Group 5: backward pagination stops early (tasks 3.1, 3.2, 3.3)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_saved_albums_limit_stops_after_last_page_when_sufficient() -> None:
+    """When the last page has >= N distinct primary artists, no earlier pages are fetched."""
+    # Library: 100 albums across 2 pages. Last page (offset=50) has 2 distinct artists.
+    # limit=1 → must stop after fetching last page only (no page at offset=0 beyond probe).
+    probe = [
+        _album_item("new1", "Newest", ["Artist X"], added_at="2024-06-01T00:00:00Z"),
+    ]
+    last_page = [
+        _album_item("old1", "Oldest1", ["Artist A"], added_at="2023-01-01T00:00:00Z"),
+        _album_item("old2", "Oldest2", ["Artist B"], added_at="2023-02-01T00:00:00Z"),
+    ]
+    captured_urls: list[str] = []
+
+    def side_effect(req: urllib.request.Request) -> Any:
+        captured_urls.append(req.full_url)
+        if len(captured_urls) == 1:
+            return _make_response(probe, total=100, limit=50)
+        return _make_response(last_page, total=100, limit=50)
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        result = fetch_saved_albums(_VALID_TOKEN, limit=2)
+
+    # Only 2 calls: probe + last page — must not fetch offset=0 again as backward page.
+    assert len(captured_urls) == 2
+    assert "offset=50" in captured_urls[1]
+    assert len({r.artists[0].id for r in result if r.artists}) >= 2
+
+
+def test_fetch_saved_albums_limit_fetches_additional_pages_when_needed() -> None:
+    """When last page alone isn't enough, additional pages are fetched in decreasing offset order."""
+    # 3 pages (150 items). Last page has 1 artist. Second-to-last has another. limit=2.
+    probe = [
+        _album_item("p1n", "Newest", ["Artist Z"], added_at="2024-06-01T00:00:00Z")
+    ]
+    page_at_100 = [
+        _album_item("p100", "Old1", ["Artist A"], added_at="2023-01-01T00:00:00Z")
+    ]
+    page_at_50 = [
+        _album_item("p50", "Old2", ["Artist B"], added_at="2023-06-01T00:00:00Z")
+    ]
+    captured_urls: list[str] = []
+
+    def side_effect(req: urllib.request.Request) -> Any:
+        captured_urls.append(req.full_url)
+        if len(captured_urls) == 1:
+            return _make_response(probe, total=150, limit=50)
+        if "offset=100" in req.full_url:
+            return _make_response(page_at_100, total=150, limit=50)
+        return _make_response(page_at_50, total=150, limit=50)
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        result = fetch_saved_albums(_VALID_TOKEN, limit=2)
+
+    offsets = [u for u in captured_urls if "offset=" in u]
+    # offset=100 must come before offset=50 (decreasing order)
+    assert "offset=100" in offsets[0]
+    assert "offset=50" in offsets[1]
+    assert len({r.artists[0].id for r in result if r.artists}) >= 2
+
+
+def test_fetch_saved_albums_limit_appends_probe_items_when_sweep_exhausted() -> None:
+    """When backward sweep exhausts all pages without N distinct artists, probe items are appended."""
+    # 2 pages. Last page (offset=50) has only 1 artist. limit=3.
+    # Only 2 distinct artists total → function must return all albums including probe items.
+    probe = [
+        _album_item("newest", "Newest", ["Artist X"], added_at="2024-06-01T00:00:00Z")
+    ]
+    last_page = [
+        _album_item("oldest", "Oldest", ["Artist Y"], added_at="2023-01-01T00:00:00Z")
+    ]
+
+    responses = iter(
+        [
+            _make_response(probe, total=100, limit=50),
+            _make_response(last_page, total=100, limit=50),
+        ]
+    )
+
+    with patch("urllib.request.urlopen", side_effect=lambda _req: next(responses)):
+        result = fetch_saved_albums(_VALID_TOKEN, limit=3)
+
+    ids = {r.id for r in result}
+    assert "newest" in ids
+    assert "oldest" in ids
+
+
+# ---------------------------------------------------------------------------
+# Group 6: stopping condition excludes probe items (tasks 4.1, 4.2)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_saved_albums_limit_probe_artists_not_counted_toward_stop() -> None:
+    """Artists seen in probe items must NOT count toward the stopping condition."""
+    # Probe has 5 distinct artists (already >= limit=3). If probe counted, we'd stop immediately.
+    # But the function must still fetch at least one backward page.
+    probe = [
+        _album_item(
+            f"p{i}", f"New{i}", [f"Artist {i}"], added_at=f"2024-0{i + 1}-01T00:00:00Z"
+        )
+        for i in range(1, 6)  # 5 distinct artists in probe
+    ]
+    last_page = [
+        _album_item("old1", "Old1", ["Artist Old"], added_at="2023-01-01T00:00:00Z"),
+    ]
+    call_count = [0]
+
+    def side_effect(req: urllib.request.Request) -> Any:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return _make_response(probe, total=100, limit=50)
+        return _make_response(last_page, total=100, limit=50)
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        fetch_saved_albums(_VALID_TOKEN, limit=3)
+
+    # Must have made at least 2 calls (probe + at least one backward page)
+    assert call_count[0] >= 2
+
+
+# ---------------------------------------------------------------------------
+# Group 7: status messages with limit (tasks 5.1, 5.2, 5.3)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_saved_albums_limit_probe_emits_status_1_of_total_pages() -> None:
+    """Probe call emits status (1/total_pages)..."""
+    received: list[str] = []
+    status.configure(received.append)
+
+    probe = [_album_item("newest", "N", ["Artist X"], added_at="2024-01-01T00:00:00Z")]
+    last_page = [
+        _album_item("oldest", "O", ["Artist Y"], added_at="2023-01-01T00:00:00Z")
+    ]
+
+    responses = iter(
+        [
+            _make_response(probe, total=100, limit=50),
+            _make_response(last_page, total=100, limit=50),
+        ]
+    )
+
+    with patch("urllib.request.urlopen", side_effect=lambda _req: next(responses)):
+        fetch_saved_albums(_VALID_TOKEN, limit=1)
+
+    assert any("(1/2)" in msg for msg in received)
+
+
+def test_fetch_saved_albums_limit_backward_pages_increment_status_counter() -> None:
+    """Each backward page increments N in the (N/total_pages) status message."""
+    received: list[str] = []
+    status.configure(received.append)
+
+    probe = [_album_item("n1", "New", ["Artist Z"], added_at="2024-01-01T00:00:00Z")]
+    page_100 = [
+        _album_item("o1", "Old1", ["Artist A"], added_at="2023-01-01T00:00:00Z")
+    ]
+    page_50 = [_album_item("o2", "Old2", ["Artist B"], added_at="2023-06-01T00:00:00Z")]
+
+    call_count = [0]
+
+    def side_effect(req: urllib.request.Request) -> Any:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return _make_response(probe, total=150, limit=50)
+        if "offset=100" in req.full_url:
+            return _make_response(page_100, total=150, limit=50)
+        return _make_response(page_50, total=150, limit=50)
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        fetch_saved_albums(_VALID_TOKEN, limit=2)
+
+    assert any("(1/3)" in msg for msg in received)
+    assert any("(2/3)" in msg for msg in received)
+    assert any("(3/3)" in msg for msg in received)
+
+
+def test_fetch_saved_albums_limit_single_page_emits_exactly_one_status() -> None:
+    """When total <= 50, exactly one status message (1/1) is emitted."""
+    received: list[str] = []
+    status.configure(received.append)
+
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_make_response(
+            [_album_item("id1", "A", ["Artist A"], added_at="2023-01-01T00:00:00Z")],
+            total=1,
+            limit=50,
+        ),
+    ):
+        fetch_saved_albums(_VALID_TOKEN, limit=4)
+
+    status_msgs = [m for m in received if "fetching saved albums" in m]
+    assert len(status_msgs) == 1
+    assert "(1/1)" in status_msgs[0]

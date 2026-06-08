@@ -1,7 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-Retrieve the authenticated user's saved Spotify albums and map them to typed `SavedAlbum` objects for downstream processing.
-## Requirements
 ### Requirement: Fetch all saved albums
 The system SHALL retrieve saved albums from the authenticated user's Spotify library by calling `GET /me/albums`. When `limit` is `None`, the function follows the `next` cursor until all pages are exhausted and returns the full list. When `limit` is set to N, the function MAY stop before exhausting all pages, provided the returned albums contain at least N distinct primary artists (or all albums if the library has fewer than N distinct primary artists).
 
@@ -17,31 +15,7 @@ The system SHALL retrieve saved albums from the authenticated user's Spotify lib
 - **WHEN** `fetch_saved_albums` is called with `limit=N` and the user has no saved albums
 - **THEN** the function returns an empty list
 
-### Requirement: Return typed SavedAlbum objects
-The system SHALL represent each saved album as a `SavedAlbum` dataclass in `models.py` containing: `id` (Spotify album ID), `name` (album title), `artists` (list of `Artist` objects, one per artist in Spotify's artist array), and `added_at` (timezone-naive UTC `datetime` of when the album was saved).
-
-#### Scenario: Valid API album item
-- **WHEN** an album item is received from the API
-- **THEN** it is mapped to a `SavedAlbum` with the correct `id`, `name`, `artists`, and `added_at` fields populated
-
-#### Scenario: Album with multiple artists
-- **WHEN** an album item contains multiple artists in Spotify's artist array
-- **THEN** all artists are stored in `SavedAlbum.artists` in the original order
-
-### Requirement: Authenticated requests
-The system SHALL use the persisted OAuth access token when calling the Spotify API and SHALL raise a clear error if no valid token is available. All HTTP calls SHALL be made via `api_request`; errors from the Spotify API surface as `RuntimeError` with a structured message (see `api-request` spec).
-
-#### Scenario: No token present
-- **WHEN** `fetch_saved_albums()` is called and no token is stored on disk
-- **THEN** the function raises an exception before making any API call
-
-#### Scenario: API returns an error
-- **WHEN** the Spotify API returns a 4xx or 5xx response during album fetching
-- **THEN** a `RuntimeError` with a structured message is raised and propagated to the caller
-
-#### Scenario: Authorization header forwarded
-- **WHEN** `fetch_saved_albums()` is called with a valid token
-- **THEN** every request includes an `Authorization: Bearer <token>` header
+## ADDED Requirements
 
 ### Requirement: fetch_saved_albums accepts an optional limit parameter
 `fetch_saved_albums` SHALL accept a keyword-only argument `limit: int | None = None`. When `limit` is `None`, behaviour is identical to the previous implementation. When `limit` is a positive integer, the function uses a backward-pagination strategy to minimise API calls.
@@ -83,4 +57,3 @@ When `limit` is set, `fetch_saved_albums` SHALL emit status messages in the same
 #### Scenario: Status for single-page library with limit
 - **WHEN** `fetch_saved_albums` is called with `limit=N` and `total <= 50`
 - **THEN** exactly one status message `(1/1)` is emitted
-
