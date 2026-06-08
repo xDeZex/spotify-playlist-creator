@@ -1,7 +1,7 @@
 ## Requirements
 
 ### Requirement: Prompt user to create Artist Folder before playlist creation
-Before Album Playlists are created for an upcoming artist, the system SHALL display a blocking prompt and wait for the user to press Enter. If the upcoming artist is the first artist in the sync with new playlists (no previous batch exists), the prompt SHALL instruct the user to create the Artist Folder for that artist only. If a previous artist's newly created playlists exist, the prompt SHALL first list those playlists newest-release-date first, instruct the user to drag them into the previous Artist Folder, then instruct the user to create the upcoming Artist Folder, and then block.
+`prompt_for_folder` SHALL accept a `genre: list[str] | None` parameter in addition to the artist name and playlist batch arguments. Before Album Playlists are created for an upcoming artist, the system SHALL display a blocking prompt and wait for the user to press Enter. If `genre` is a non-empty list, the artist name SHALL be displayed with `[tag1, tag2, ...]` appended; if `genre` is an empty list (no tags found), it SHALL display `[genre not found]`; if `genre` is `None` (fetch failed), it SHALL display `[failed to get genre]`. If the upcoming artist is the first artist in the sync with new playlists (no previous batch exists), the prompt SHALL instruct the user to create the Artist Folder for that artist only. If a previous artist's newly created playlists exist, the prompt SHALL first list those playlists newest-release-date first, instruct the user to drag them into the previous Artist Folder, then instruct the user to create the upcoming Artist Folder, and then block.
 
 #### Scenario: First artist — no previous batch
 - **WHEN** no playlists have been created yet in this sync and the first artist with new albums is about to be processed
@@ -16,7 +16,7 @@ Before Album Playlists are created for an upcoming artist, the system SHALL disp
 - **THEN** no previous-batch section is shown in the prompt
 
 ### Requirement: Print final non-blocking message after last artist's playlists are created
-After Album Playlists are created for the last artist in the sync that had new playlists, the system SHALL print those playlists newest-release-date first and instruct the user to drag them into the Artist Folder. The system SHALL NOT block for user input.
+`print_final_folder_message` SHALL accept a `genre: list[str] | None` parameter in addition to the artist name and playlist batch arguments. After Album Playlists are created for the last artist in the sync that had new playlists, the system SHALL print those playlists newest-release-date first and instruct the user to drag them into the Artist Folder. The genre tag follows the same display rules as `prompt_for_folder`: non-empty list → `[tag1, tag2, ...]`, empty list → `[genre not found]`, `None` → `[failed to get genre]`. The system SHALL NOT block for user input.
 
 #### Scenario: Final artist playlists created
 - **WHEN** the sync loop has finished creating playlists for the last artist with new albums

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import datetime
 from unittest.mock import patch
 
+import pytest
 from pytest import mark
 
 from spotify_playlist_creator import run
@@ -68,6 +70,15 @@ _RAW_SINGLES: list[RawRelease] = [
 ]
 
 _EXISTING_EMPTY: dict[str, list[str]] = {}
+
+
+@pytest.fixture(autouse=True)
+def _lastfm_defaults() -> Generator[None, None, None]:
+    with (
+        patch("spotify_playlist_creator.lastfm.get_api_key", return_value="testkey"),
+        patch("spotify_playlist_creator.lastfm.fetch_artist_genre", return_value=[]),
+    ):
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -153,9 +164,11 @@ def test_run_calls_prompt_for_folder_for_each_artist_with_new_playlists() -> Non
         run()
 
     assert mock_prompt.call_count == 2
-    mock_prompt.assert_any_call("Artist A", None, [])
-    mock_prompt.assert_any_call("Artist B", "Artist A", [_CREATED_A1, _CREATED_A2])
-    mock_final.assert_called_once_with("Artist B", [_CREATED_B1])
+    mock_prompt.assert_any_call("Artist A", None, [], genre=[])
+    mock_prompt.assert_any_call(
+        "Artist B", "Artist A", [_CREATED_A1, _CREATED_A2], genre=[]
+    )
+    mock_final.assert_called_once_with("Artist B", [_CREATED_B1], genre=[])
 
 
 # ---------------------------------------------------------------------------
@@ -252,8 +265,8 @@ def test_run_calls_prompt_only_for_artists_with_new_albums() -> None:
         run()
 
     assert mock_prompt.call_count == 1
-    mock_prompt.assert_called_once_with("Artist A", None, [])
-    mock_final.assert_called_once_with("Artist A", [_CREATED_A1, _CREATED_A2])
+    mock_prompt.assert_called_once_with("Artist A", None, [], genre=[])
+    mock_final.assert_called_once_with("Artist A", [_CREATED_A1, _CREATED_A2], genre=[])
 
 
 # ---------------------------------------------------------------------------
@@ -617,8 +630,8 @@ def test_run_dry_run_calls_report_for_every_artist_including_up_to_date() -> Non
         run(dry_run=True)
 
     assert mock_report.call_count == 2
-    mock_report.assert_any_call("Artist A", [_ALBUM_A1])
-    mock_report.assert_any_call("Artist B", [])
+    mock_report.assert_any_call("Artist A", [_ALBUM_A1], genre=[])
+    mock_report.assert_any_call("Artist B", [], genre=[])
 
 
 def test_run_normal_mode_behaviour_unchanged() -> None:
@@ -671,9 +684,11 @@ def test_run_normal_mode_behaviour_unchanged() -> None:
     assert mock_find_missing.call_count == 2
     assert mock_create.call_count == 2
     assert mock_prompt.call_count == 2
-    mock_prompt.assert_any_call("Artist A", None, [])
-    mock_prompt.assert_any_call("Artist B", "Artist A", [_CREATED_A1, _CREATED_A2])
-    mock_final.assert_called_once_with("Artist B", [_CREATED_B1])
+    mock_prompt.assert_any_call("Artist A", None, [], genre=[])
+    mock_prompt.assert_any_call(
+        "Artist B", "Artist A", [_CREATED_A1, _CREATED_A2], genre=[]
+    )
+    mock_final.assert_called_once_with("Artist B", [_CREATED_B1], genre=[])
     mock_report.assert_not_called()
 
 
@@ -682,7 +697,11 @@ def test_run_prompt_fires_before_create_album_playlists() -> None:
     call_log: list[str] = []
 
     def recording_prompt(
-        upcoming: str, previous: str | None, prev_pl: list[object]
+        upcoming: str,
+        previous: str | None,
+        prev_pl: list[object],
+        *,
+        genre: list[str] | None = None,
     ) -> None:
         call_log.append(f"prompt:{upcoming}")
 
@@ -725,7 +744,9 @@ def test_run_final_message_fires_after_last_artist_creation() -> None:
         call_log.append("create")
         return [_CREATED_A1]
 
-    def recording_final(artist: str, playlists: list[object]) -> None:
+    def recording_final(
+        artist: str, playlists: list[object], *, genre: list[str] | None = None
+    ) -> None:
         call_log.append("final")
 
     with (
@@ -779,19 +800,13 @@ def test_run_single_artist_uses_first_artist_prompt_form_and_final_message() -> 
     ):
         run()
 
-    mock_prompt.assert_called_once_with("Artist A", None, [])
-    mock_final.assert_called_once_with("Artist A", [_CREATED_A1])
+    mock_prompt.assert_called_once_with("Artist A", None, [], genre=[])
+    mock_final.assert_called_once_with("Artist A", [_CREATED_A1], genre=[])
 
 
 # ---------------------------------------------------------------------------
 # Tasks 6.1-6.4: run() status orchestration
 # ---------------------------------------------------------------------------
-
-_COMMON_PATCHES: dict[str, object] = dict(
-    fetch_saved_albums=lambda tok: [],
-    derive_artists=lambda albums: [],
-    fetch_owned_playlists=lambda tok: {},
-)
 
 
 def test_run_sets_status_before_fetch_saved_albums() -> None:
@@ -937,3 +952,165 @@ def test_run_passes_none_limit_to_fetch_saved_albums() -> None:
         run(limit=None)
 
     mock_fetch.assert_called_once_with(_TOKEN, limit=None)
+
+
+# ---------------------------------------------------------------------------
+# Group: lastfm genre wired into run() (tasks 4.1–4.6)
+# ---------------------------------------------------------------------------
+
+
+def test_run_calls_get_api_key_before_fetch_saved_albums() -> None:
+    # Adversarial: call_log captures order — get_api_key must precede fetch_saved_albums
+    call_log: list[str] = []
+
+    def recording_get_api_key() -> str:
+        call_log.append("get_api_key")
+        return "mykey"
+
+    def recording_fetch_saved_albums(
+        tok: object, *, limit: int | None = None
+    ) -> list[object]:
+        call_log.append("fetch_saved_albums")
+        return []
+
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch(
+            "spotify_playlist_creator.lastfm.get_api_key",
+            side_effect=recording_get_api_key,
+        ),
+        patch(
+            "spotify_playlist_creator.fetch_saved_albums",
+            side_effect=recording_fetch_saved_albums,
+        ),
+        patch("spotify_playlist_creator.derive_artists", return_value=[]),
+    ):
+        run()
+
+    assert "get_api_key" in call_log
+    assert "fetch_saved_albums" in call_log
+    assert call_log.index("get_api_key") < call_log.index("fetch_saved_albums")
+
+
+def test_run_propagates_runtime_error_from_get_api_key() -> None:
+    # Adversarial: missing key must abort before fetch_saved_albums
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch(
+            "spotify_playlist_creator.lastfm.get_api_key",
+            side_effect=RuntimeError("LASTFM_API_KEY environment variable is not set"),
+        ),
+        patch("spotify_playlist_creator.fetch_saved_albums") as mock_fetch,
+    ):
+        with pytest.raises(RuntimeError, match="LASTFM_API_KEY"):
+            run()
+
+    mock_fetch.assert_not_called()
+
+
+def test_run_passes_genre_to_prompt_for_folder() -> None:
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[_SAVED_A]),
+        patch("spotify_playlist_creator.derive_artists", return_value=[_ARTIST_A]),
+        patch("spotify_playlist_creator.fetch_artist_releases", return_value=_RAW_A),
+        patch("spotify_playlist_creator.classify_releases", return_value=[_ALBUM_A1]),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[_ALBUM_A1],
+        ),
+        patch(
+            "spotify_playlist_creator.create_album_playlists",
+            return_value=[_CREATED_A1],
+        ),
+        patch(
+            "spotify_playlist_creator.lastfm.fetch_artist_genre",
+            return_value=["j-pop"],
+        ),
+        patch("spotify_playlist_creator.lastfm.get_api_key", return_value="mykey"),
+        patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
+        patch("spotify_playlist_creator.print_final_folder_message"),
+    ):
+        run()
+
+    mock_prompt.assert_called_once_with("Artist A", None, [], genre=["j-pop"])
+
+
+def test_run_passes_genre_to_print_final_folder_message() -> None:
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[_SAVED_A]),
+        patch("spotify_playlist_creator.derive_artists", return_value=[_ARTIST_A]),
+        patch("spotify_playlist_creator.fetch_artist_releases", return_value=_RAW_A),
+        patch("spotify_playlist_creator.classify_releases", return_value=[_ALBUM_A1]),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[_ALBUM_A1],
+        ),
+        patch(
+            "spotify_playlist_creator.create_album_playlists",
+            return_value=[_CREATED_A1],
+        ),
+        patch(
+            "spotify_playlist_creator.lastfm.fetch_artist_genre",
+            return_value=["j-pop"],
+        ),
+        patch("spotify_playlist_creator.lastfm.get_api_key", return_value="mykey"),
+        patch("spotify_playlist_creator.prompt_for_folder"),
+        patch("spotify_playlist_creator.print_final_folder_message") as mock_final,
+    ):
+        run()
+
+    mock_final.assert_called_once_with("Artist A", [_CREATED_A1], genre=["j-pop"])
+
+
+def test_run_passes_genre_to_report_dry_sync_artist() -> None:
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[_SAVED_A]),
+        patch("spotify_playlist_creator.derive_artists", return_value=[_ARTIST_A]),
+        patch("spotify_playlist_creator.fetch_artist_releases", return_value=_RAW_A),
+        patch("spotify_playlist_creator.classify_releases", return_value=[_ALBUM_A1]),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[_ALBUM_A1],
+        ),
+        patch(
+            "spotify_playlist_creator.lastfm.fetch_artist_genre",
+            return_value=["j-pop"],
+        ),
+        patch("spotify_playlist_creator.lastfm.get_api_key", return_value="mykey"),
+        patch("spotify_playlist_creator.report_dry_sync_artist") as mock_report,
+    ):
+        run(dry_run=True)
+
+    mock_report.assert_called_once_with("Artist A", [_ALBUM_A1], genre=["j-pop"])
+
+
+def test_run_uses_failed_to_get_genre_when_fetch_artist_genre_raises() -> None:
+    # Adversarial: fetch_artist_genre raises — run must catch and pass "failed to get genre"
+    with (
+        patch("spotify_playlist_creator.authenticate", return_value=_TOKEN),
+        patch("spotify_playlist_creator.fetch_saved_albums", return_value=[_SAVED_A]),
+        patch("spotify_playlist_creator.derive_artists", return_value=[_ARTIST_A]),
+        patch("spotify_playlist_creator.fetch_artist_releases", return_value=_RAW_A),
+        patch("spotify_playlist_creator.classify_releases", return_value=[_ALBUM_A1]),
+        patch(
+            "spotify_playlist_creator.find_missing_album_playlists",
+            return_value=[_ALBUM_A1],
+        ),
+        patch(
+            "spotify_playlist_creator.create_album_playlists",
+            return_value=[_CREATED_A1],
+        ),
+        patch(
+            "spotify_playlist_creator.lastfm.fetch_artist_genre",
+            side_effect=RuntimeError("network error"),
+        ),
+        patch("spotify_playlist_creator.lastfm.get_api_key", return_value="mykey"),
+        patch("spotify_playlist_creator.prompt_for_folder") as mock_prompt,
+        patch("spotify_playlist_creator.print_final_folder_message"),
+    ):
+        run()
+
+    mock_prompt.assert_called_once_with("Artist A", None, [], genre=None)
